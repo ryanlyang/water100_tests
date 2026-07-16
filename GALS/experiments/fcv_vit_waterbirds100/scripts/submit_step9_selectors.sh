@@ -29,7 +29,7 @@ diagnostic_job=$(sbatch --parsable --dependency="afterany:${oracle_job}" \
 selection_job=$(sbatch --parsable --dependency="afterok:${oracle_job}" \
   experiments/fcv_vit_waterbirds100/slurm/build_selection_table.sbatch)
 
-echo "Oracle validation array: $oracle_job (27 tasks, 20 checkpoints per task)"
+echo "Oracle validation array: $oracle_job (27 tasks, 3 checkpoints per task)"
 echo "Diagnostic partial aggregation: $diagnostic_job"
 echo "Strict selector-table job: $selection_job"
 echo "Re-submission reuses Oracle summaries with matching checkpoint/config/manifest hashes."

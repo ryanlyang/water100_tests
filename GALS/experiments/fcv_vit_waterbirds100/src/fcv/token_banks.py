@@ -23,6 +23,7 @@ from .candidate_training import (
     software_fingerprint,
     software_versions,
 )
+from .config import candidate_epochs
 from .manifest_provenance import (
     ManifestProvenanceError,
     validate_manifest_bundle,
@@ -772,7 +773,7 @@ def candidate_checkpoints_for_run(
     candidate_root: str | Path,
     run_index: int,
 ) -> List[Path]:
-    """Return the exact 20 ordered Step 4 checkpoints for one sweep run."""
+    """Return the exact ordered reduced-pool checkpoints for one sweep run."""
 
     run = get_sweep_run(config, run_index)
     run_dir = Path(candidate_root) / run.run_id
@@ -780,8 +781,7 @@ def candidate_checkpoints_for_run(
     if not metrics_path.is_file():
         raise FileNotFoundError(f"Missing Step 4 run metrics: {metrics_path}")
     metrics = pd.read_csv(metrics_path).sort_values("epoch")
-    epochs = int(config["training"]["epochs"])
-    expected_epochs = list(range(1, epochs + 1))
+    expected_epochs = candidate_epochs(config)
     if metrics["epoch"].astype(int).tolist() != expected_epochs:
         raise CandidateTrainingError(
             f"Run {run_index} does not contain the complete ordered epoch set."
@@ -818,9 +818,9 @@ def aggregate_token_bank_summaries(
     rows = []
     missing_candidates = []
     invalid_candidates = []
-    epochs = int(config["training"]["epochs"])
+    selected_epochs = candidate_epochs(config)
     for run in enumerate_sweep_runs(config):
-        for epoch in range(1, epochs + 1):
+        for epoch in selected_epochs:
             candidate_id = run.candidate_id(epoch)
             summary_path = token_bank_dir / f"{candidate_id}_summary.json"
             if not summary_path.is_file():

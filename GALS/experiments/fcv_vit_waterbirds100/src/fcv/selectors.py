@@ -21,6 +21,7 @@ from .candidate_training import (
     candidate_training_fingerprint,
     enumerate_sweep_runs,
 )
+from .config import candidate_epochs
 from .manifest_provenance import (
     ManifestProvenanceError,
     validate_manifest_bundle,
@@ -695,11 +696,11 @@ def aggregate_oracle_summaries(
     rows: List[Dict[str, Any]] = []
     missing: List[str] = []
     invalid: List[Dict[str, str]] = []
-    epochs = int(config["training"]["epochs"])
+    selected_epochs = candidate_epochs(config)
     expected_training_fingerprint = candidate_training_fingerprint(config)
     expected_selector_fingerprint = selector_analysis_fingerprint(config)
     for run in enumerate_sweep_runs(config):
-        for epoch in range(1, epochs + 1):
+        for epoch in selected_epochs:
             candidate_id = run.candidate_id(epoch)
             summary_path = oracle_dir / f"{candidate_id}_oracle_summary.json"
             if not summary_path.is_file():

@@ -19,6 +19,6 @@ cd "$REPO"
 
 echo "[$(date)] host=$(hostname) job=${SLURM_JOB_ID}"
 
-# The strict index must contain all 540 post-hoc scores before reporting a gap.
+# The strict index must contain all 81 post-hoc scores before reporting a gap.
 srun python -u experiments/fcv_vit_waterbirds100/scripts/aggregate_pool_test_scores.py
 srun python -u experiments/fcv_vit_waterbirds100/scripts/compute_gap_closure.py

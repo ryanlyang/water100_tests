@@ -33,7 +33,7 @@ diagnostic_job=$(sbatch --parsable --dependency="afterany:${pool_job}" \
 gap_job=$(sbatch --parsable --dependency="afterok:${pool_job}" \
   experiments/fcv_vit_waterbirds100/slurm/compute_gap_closure.sbatch)
 
-echo "Post-hoc pool test array: $pool_job (27 tasks, 20 checkpoints per task)"
+echo "Post-hoc pool test array: $pool_job (27 tasks, 3 checkpoints per task)"
 echo "Diagnostic partial aggregation: $diagnostic_job"
 echo "Strict gap-closure job: $gap_job"
 echo "Pool test metrics are analysis-only and cannot change frozen selections."

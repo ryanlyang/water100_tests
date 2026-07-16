@@ -4,13 +4,31 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, List, Mapping
 
 import yaml
 
 
 class ConfigError(ValueError):
     """Raised when a study configuration violates the locked protocol."""
+
+
+def candidate_epochs(config: Mapping[str, Any]) -> List[int]:
+    """Return the ordered, precommitted checkpoint epochs in the candidate pool."""
+
+    training = _require(config, "training", "config")
+    pool = _require(config, "candidate_pool", "config")
+    epochs = int(_require(training, "epochs", "training"))
+    values = [int(value) for value in _require(pool, "candidate_epochs", "candidate_pool")]
+    if not values or values != sorted(set(values)):
+        raise ConfigError(
+            "candidate_pool.candidate_epochs must be a nonempty, strictly increasing set."
+        )
+    if values[0] < 1 or values[-1] > epochs:
+        raise ConfigError(
+            "candidate_pool.candidate_epochs must lie inside the training schedule."
+        )
+    return values
 
 
 def _expand_paths(value: Any) -> Any:
@@ -56,6 +74,7 @@ def validate_config(
     execution = _require(config, "execution", "config")
     fcv = _require(config, "fcv", "config")
     evaluation = _require(config, "evaluation", "config")
+    storage = _require(config, "storage", "config")
 
     if study.get("dataset") != "waterbirds100":
         raise ConfigError("The first-study configuration must target waterbirds100.")
@@ -143,14 +162,20 @@ def validate_config(
     if epochs != 20:
         raise ConfigError("The locked first-study training length is 20 epochs.")
     expected_runs = len(learning_rates) * len(weight_decays) * len(seeds)
-    expected_candidates = expected_runs * epochs
+    selected_epochs = candidate_epochs(config)
+    if strict_protocol and selected_epochs != [5, 10, 20]:
+        raise ConfigError(
+            "The reduced first study locks candidate epochs to [5, 10, 20]."
+        )
+    expected_candidates = expected_runs * len(selected_epochs)
     if int(pool.get("expected_training_runs", -1)) != expected_runs:
         raise ConfigError(
             "candidate_pool.expected_training_runs does not match the sweep product."
         )
     if int(pool.get("expected_candidate_checkpoints", -1)) != expected_candidates:
         raise ConfigError(
-            "candidate_pool.expected_candidate_checkpoints does not match runs*epochs."
+            "candidate_pool.expected_candidate_checkpoints does not match "
+            "runs*len(candidate_epochs)."
         )
     if training.get("optimizer") != "AdamW":
         raise ConfigError("The first candidate pool locks the optimizer to AdamW.")
@@ -217,14 +242,33 @@ def validate_config(
         raise ConfigError("Candidate training requires deterministic algorithms.")
     if reproducibility.get("cudnn_benchmark") is not False:
         raise ConfigError("cuDNN benchmarking must be disabled for exact resume.")
-    if pool.get("checkpoint_retention") != "all_until_step12_complete_then_prune":
+    if pool.get("unit") != "fixed_epoch_checkpoint":
+        raise ConfigError("The reduced study uses fixed candidate checkpoint epochs.")
+    if pool.get("checkpoint_retention") != (
+        "candidate_epochs_until_step12_complete_then_prune"
+    ):
         raise ConfigError(
-            "All epoch checkpoints must remain available through successful Step 12."
+            "All reduced-pool candidate checkpoints must remain through Step 12."
         )
     if pool.get("checkpoint_dtype") != "float32":
         raise ConfigError("Candidate checkpoint weights must remain float32.")
     if pool.get("save_optimizer_state") is not False:
         raise ConfigError("Candidate checkpoints must not contain optimizer state.")
+    hard_budget = float(_require(storage, "hard_budget_gib", "storage"))
+    launch_guard = float(_require(storage, "launch_guard_gib", "storage"))
+    if hard_budget != 40.0 or launch_guard != 35.0:
+        raise ConfigError("The reduced study locks storage limits to 35/40 GiB.")
+    if not 0.0 < launch_guard < hard_budget:
+        raise ConfigError("storage.launch_guard_gib must be below hard_budget_gib.")
+    locked_storage = {
+        "streaming_token_banks": True,
+        "delete_token_banks_after_fcv_and_controls": True,
+        "delete_completed_resume_states_after_pool_validation": True,
+        "max_concurrent_streaming_runs": 4,
+    }
+    for key, expected in locked_storage.items():
+        if storage.get(key) != expected:
+            raise ConfigError(f"The reduced study locks storage.{key}={expected!r}.")
     locked_execution = {
         "token_bank_batch_size": 128,
         "token_bank_num_workers": 8,
@@ -587,7 +631,8 @@ def config_summary(config: Mapping[str, Any]) -> Dict[str, Any]:
         "biased_validation_fraction": holdout["validation_fraction"],
         "holdout_split_seed": holdout["split_seed"],
         "training_runs": run_count,
-        "candidate_checkpoints": run_count * int(training["epochs"]),
+        "candidate_checkpoints": run_count * len(candidate_epochs(config)),
+        "candidate_epochs": candidate_epochs(config),
         "fcv_donor_samples": config["fcv"]["donor_samples_per_image"],
         "primary_selector": config["fcv"]["primary_selector"]["name"],
     }

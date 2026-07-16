@@ -22,7 +22,7 @@ from fcv.candidate_training import (  # noqa: E402
     get_sweep_run,
     validate_runtime_software,
 )
-from fcv.config import load_and_validate_config  # noqa: E402
+from fcv.config import candidate_epochs, load_and_validate_config  # noqa: E402
 
 
 DEFAULT_CONFIG = (
@@ -37,7 +37,7 @@ EXACT_METRIC_COLUMNS = [
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compare every epoch of resumed and uninterrupted GH200 training."
+        description="Compare fixed candidates from resumed and uninterrupted GH200 training."
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--run-index", type=int, default=0)
@@ -59,7 +59,7 @@ def main() -> None:
     config = load_and_validate_config(args.config)
     versions = validate_runtime_software(config)
     run = get_sweep_run(config, args.run_index)
-    epochs = int(config["training"]["epochs"])
+    selected_epochs = candidate_epochs(config)
     run_dirs = {
         "resumed": args.resumed_root.expanduser().resolve() / run.run_id,
         "reference": args.reference_root.expanduser().resolve() / run.run_id,
@@ -71,8 +71,10 @@ def main() -> None:
         if not metrics_path.is_file() or not summary_path.is_file():
             raise FileNotFoundError(f"Incomplete {name} run: {run_dir}")
         frame = pd.read_csv(metrics_path).sort_values("epoch").reset_index(drop=True)
-        if len(frame) != epochs:
-            raise RuntimeError(f"{name} has {len(frame)} epochs; expected {epochs}.")
+        if frame["epoch"].astype(int).tolist() != selected_epochs:
+            raise RuntimeError(
+                f"{name} candidate epochs differ: expected {selected_epochs}."
+            )
         frames[name] = frame
 
     left = frames["resumed"][EXACT_METRIC_COLUMNS]
@@ -90,7 +92,7 @@ def main() -> None:
             raise RuntimeError(f"Resume equivalence failed for metric {column!r}.")
 
     compared_tensor_count = 0
-    for epoch in range(1, epochs + 1):
+    for epoch in selected_epochs:
         checkpoints = {
             name: load_checkpoint(run_dir / "checkpoints" / f"epoch_{epoch:03d}.pt")
             for name, run_dir in run_dirs.items()
@@ -126,7 +128,7 @@ def main() -> None:
         "status": "passed",
         "run_index": run.run_index,
         "run_id": run.run_id,
-        "epochs_compared": epochs,
+        "candidate_epochs_compared": selected_epochs,
         "metric_columns_compared": EXACT_METRIC_COLUMNS,
         "model_tensors_compared": compared_tensor_count,
         "resumed_root": str(args.resumed_root.expanduser().resolve()),

@@ -30,6 +30,7 @@ from fcv.config import load_and_validate_config  # noqa: E402
 from fcv.controls import (  # noqa: E402
     CONTROL_NAMES,
     FCVControlError,
+    _canonical_probability_draw_statistics,
     aggregate_control_summaries,
     prepare_control_plan,
     recompute_control_metrics_from_frame,
@@ -43,6 +44,7 @@ from fcv.fcv_scoring import (  # noqa: E402
     prepare_opposite_donor_plan,
     score_candidate_fcv,
 )
+from fcv.streaming import _cleanup_candidate_banks  # noqa: E402
 from fcv.token_banks import (  # noqa: E402
     CONTEXT_NAMES,
     TokenBankError,
@@ -347,6 +349,34 @@ class TokenBanksTest(unittest.TestCase):
                 counterfactual_forward_batch_size=8,
             )
 
+    def test_control_probability_statistics_use_serialized_draw_values(self) -> None:
+        probabilities = torch.tensor(
+            [
+                0.9515874981880188,
+                0.6856323480606079,
+                0.8291820883750916,
+                0.5362794995307922,
+                0.9977296590805054,
+            ],
+            dtype=torch.float32,
+        )
+        values, canonical_mean, canonical_std = (
+            _canonical_probability_draw_statistics(probabilities)
+        )
+        recomputed = np.asarray(
+            json.loads(json.dumps(values, separators=(",", ":"))),
+            dtype=np.float64,
+        )
+
+        # This vector reproduces the GH200 failure mode: a float32 tensor
+        # reduction differs from the canonical persisted mean by > 1e-7.
+        self.assertGreater(
+            abs(float(probabilities.mean().item()) - float(recomputed.mean())),
+            1.0e-7,
+        )
+        self.assertEqual(canonical_mean, float(recomputed.mean()))
+        self.assertEqual(canonical_std, float(recomputed.std(ddof=0)))
+
     def test_builds_separate_float32_banks_with_compact_provenance(self) -> None:
         source = prepare_token_bank_source(
             self.config,
@@ -455,6 +485,7 @@ class TokenBanksTest(unittest.TestCase):
         config = dict(self.config)
         config["training"] = dict(self.config["training"])
         config["training"]["epochs"] = 2
+        config["candidate_pool"]["candidate_epochs"] = [1, 2]
         config["training"]["scheduler"] = dict(self.config["training"]["scheduler"])
         config["training"]["scheduler"]["warmup_epochs"] = 1
         config["candidate_pool"] = dict(self.config["candidate_pool"])
@@ -519,7 +550,8 @@ class TokenBanksTest(unittest.TestCase):
         )
         checkpoint_path = self.root / "candidate.pt"
         checkpoint_path.write_bytes(b"candidate checkpoint placeholder")
-        candidate_id = get_sweep_run(self.config, 0).candidate_id(1)
+        candidate_epoch = self.config["candidate_pool"]["candidate_epochs"][0]
+        candidate_id = get_sweep_run(self.config, 0).candidate_id(candidate_epoch)
         artifact = {
             "candidate_id": candidate_id,
             "run": {
@@ -528,7 +560,7 @@ class TokenBanksTest(unittest.TestCase):
                 "weight_decay": 0.01,
                 "seed": 0,
             },
-            "epoch": 1,
+            "epoch": candidate_epoch,
             "training_fingerprint": candidate_training_fingerprint(self.config),
             "software_versions": software_versions(),
             "model": dict(self.config["model"]),
@@ -726,7 +758,8 @@ class TokenBanksTest(unittest.TestCase):
         )
         checkpoint_path = self.root / "control_candidate.pt"
         checkpoint_path.write_bytes(b"control candidate checkpoint placeholder")
-        candidate_id = get_sweep_run(self.config, 0).candidate_id(1)
+        candidate_epoch = self.config["candidate_pool"]["candidate_epochs"][0]
+        candidate_id = get_sweep_run(self.config, 0).candidate_id(candidate_epoch)
         artifact = {
             "candidate_id": candidate_id,
             "run": {
@@ -735,7 +768,7 @@ class TokenBanksTest(unittest.TestCase):
                 "weight_decay": 0.01,
                 "seed": 0,
             },
-            "epoch": 1,
+            "epoch": candidate_epoch,
             "training_fingerprint": candidate_training_fingerprint(self.config),
             "software_versions": software_versions(),
             "model": dict(self.config["model"]),
@@ -925,6 +958,43 @@ class TokenBanksTest(unittest.TestCase):
                 counterfactual_forward_batch_size=8,
             )
         self.assertEqual(reused["status"], "reused")
+
+        bank_summary_path = token_dir / f"{candidate_id}_summary.json"
+        with bank_summary_path.open("r", encoding="utf-8") as handle:
+            bank_summary = json.load(handle)
+        receipt_path = (
+            Path(self.config["paths"]["output_root"])
+            / self.config["outputs"]["token_banks"]
+            / "cleanup_receipts"
+            / f"{candidate_id}.json"
+        )
+        receipt = _cleanup_candidate_banks(
+            self.config,
+            candidate_id=candidate_id,
+            checkpoint_path=checkpoint_path.resolve(),
+            checkpoint_sha256=sha256_file(checkpoint_path),
+            bank_summary=bank_summary,
+            fcv_summary_path=step7_dir / f"{candidate_id}_summary.json",
+            control_summary_path=control_dir
+            / f"{candidate_id}_controls_summary.json",
+            receipt_path=receipt_path,
+        )
+        self.assertEqual(receipt["status"], "complete")
+        for context_name in CONTEXT_NAMES.values():
+            self.assertFalse(
+                (token_dir / f"{candidate_id}_{context_name}.pt").exists()
+            )
+
+        fcv_aggregate = aggregate_fcv_score_summaries(
+            self.config,
+            step7_dir,
+            step7_dir / "candidate_fcv_scores_after_cleanup.csv",
+            step7_dir / "candidate_fcv_scores_after_cleanup_summary.json",
+            source=source,
+            donor_plan_path=opposite_plan_path,
+            allow_incomplete=True,
+        )
+        self.assertEqual(fcv_aggregate["candidate_count"], 1)
 
         aggregate = aggregate_control_summaries(
             self.config,

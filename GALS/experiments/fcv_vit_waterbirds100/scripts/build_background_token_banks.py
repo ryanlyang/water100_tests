@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     candidate.add_argument(
         "--run-index",
         type=int,
-        help="Build all 20 epoch candidates for one Step 4 run index.",
+        help="Build the three fixed-epoch candidates for one Step 4 run index.",
     )
     parser.add_argument("--manifest", type=Path, default=None)
     parser.add_argument("--patch-masks", type=Path, default=None)

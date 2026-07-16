@@ -73,7 +73,7 @@ srun python -u experiments/fcv_vit_waterbirds100/scripts/train_candidate.py \
 srun python -u experiments/fcv_vit_waterbirds100/scripts/train_candidate.py \
   --config "$CONFIG" --run-index 0 --candidate-root "$RESUMED"
 
-# Train the same locked candidate without pausing and compare every epoch's
+# Train the same locked candidate without pausing and compare fixed epochs'
 # metrics and model tensors exactly on the GH200 runtime.
 srun python -u experiments/fcv_vit_waterbirds100/scripts/train_candidate.py \
   --config "$CONFIG" --run-index 0 --candidate-root "$REFERENCE"
@@ -97,39 +97,28 @@ srun python -u experiments/fcv_vit_waterbirds100/scripts/prepare_opposite_donor_
   --config "$CONFIG" --manifest "$MANIFEST" --patch-masks "$MASKS" \
   --token-bank-dir "$BANKS" --reference-run-index 0 --reference-epoch 20 \
   --output "$FCV/opposite_donor_plan.pt"
-srun python -u experiments/fcv_vit_waterbirds100/scripts/score_fcv_candidates.py \
-  --config "$CONFIG" --checkpoint "$CHECKPOINT" --manifest "$MANIFEST" \
-  --patch-masks "$MASKS" --token-bank-dir "$BANKS" \
-  --donor-plan "$FCV/opposite_donor_plan.pt" --output-dir "$FCV" \
-  --batch-size 128 --workers 8
 srun python -u experiments/fcv_vit_waterbirds100/scripts/prepare_control_plan.py \
   --config "$CONFIG" --manifest "$MANIFEST" --patch-masks "$MASKS" \
   --token-bank-dir "$BANKS" --reference-run-index 0 --reference-epoch 20 \
   --opposite-donor-plan "$FCV/opposite_donor_plan.pt" \
   --output "$CONTROLS/control_plan.pt"
-srun python -u experiments/fcv_vit_waterbirds100/scripts/score_fcv_controls.py \
-  --config "$CONFIG" --checkpoint "$CHECKPOINT" --manifest "$MANIFEST" \
-  --patch-masks "$MASKS" --token-bank-dir "$BANKS" \
-  --opposite-donor-plan "$FCV/opposite_donor_plan.pt" \
-  --control-plan "$CONTROLS/control_plan.pt" --step7-score-dir "$FCV" \
-  --output-dir "$CONTROLS" --batch-size 128 --workers 8
 
-# Re-run every checkpoint-dependent stage without overwrite; all three must
-# validate their complete summaries and return status=reused.
-srun python -u experiments/fcv_vit_waterbirds100/scripts/build_background_token_banks.py \
-  --config "$CONFIG" --checkpoint "$CHECKPOINT" --manifest "$MANIFEST" \
-  --patch-masks "$MASKS" --output-dir "$BANKS" --batch-size 128 --workers 8
-srun python -u experiments/fcv_vit_waterbirds100/scripts/score_fcv_candidates.py \
-  --config "$CONFIG" --checkpoint "$CHECKPOINT" --manifest "$MANIFEST" \
-  --patch-masks "$MASKS" --token-bank-dir "$BANKS" \
-  --donor-plan "$FCV/opposite_donor_plan.pt" --output-dir "$FCV" \
-  --batch-size 128 --workers 8
-srun python -u experiments/fcv_vit_waterbirds100/scripts/score_fcv_controls.py \
-  --config "$CONFIG" --checkpoint "$CHECKPOINT" --manifest "$MANIFEST" \
-  --patch-masks "$MASKS" --token-bank-dir "$BANKS" \
-  --opposite-donor-plan "$FCV/opposite_donor_plan.pt" \
-  --control-plan "$CONTROLS/control_plan.pt" --step7-score-dir "$FCV" \
-  --output-dir "$CONTROLS" --batch-size 128 --workers 8
+# Exercise the production bounded-storage transaction over epochs 5, 10, and
+# 20. Each candidate must finish FCV + all controls before its bank tensors are
+# removed. The second invocation must reuse validated cleanup receipts.
+for attempt in 1 2; do
+  srun python -u experiments/fcv_vit_waterbirds100/scripts/stream_score_run.py \
+    --config "$CONFIG" --run-index 0 --device cuda \
+    --candidate-root "$RESUMED" --manifest "$MANIFEST" \
+    --patch-masks "$MASKS" --token-bank-dir "$BANKS" \
+    --donor-plan "$FCV/opposite_donor_plan.pt" \
+    --control-plan "$CONTROLS/control_plan.pt" \
+    --fcv-score-dir "$FCV" --control-score-dir "$CONTROLS" \
+    --storage-root "$SMOKE"
+done
+
+test "$(find "$BANKS" -maxdepth 1 -name '*.pt' | wc -l)" -eq 0
+test "$(find "$BANKS/cleanup_receipts" -maxdepth 1 -name '*.json' | wc -l)" -eq 3
 
 echo "[DONE] GH200 full protocol tests, resume, reconstruction, Steps 6-8, diagnostics, and reuse passed."
 echo "Artifacts: $SMOKE"

@@ -21,6 +21,7 @@ from .candidate_training import (
     candidate_training_fingerprint,
     enumerate_sweep_runs,
 )
+from .config import candidate_epochs
 from .manifest_provenance import (
     ManifestProvenanceError,
     validate_manifest_bundle,
@@ -250,7 +251,7 @@ def load_frozen_selection(
     expected_candidate_ids = [
         run.candidate_id(epoch)
         for run in enumerate_sweep_runs(config)
-        for epoch in range(1, int(config["training"]["epochs"]) + 1)
+        for epoch in candidate_epochs(config)
     ]
     observed_candidate_ids = matrix["candidate_id"].astype(str).tolist()
     if observed_candidate_ids != expected_candidate_ids:

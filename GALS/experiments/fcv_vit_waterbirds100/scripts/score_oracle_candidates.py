@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     candidate.add_argument(
         "--run-index",
         type=int,
-        help="Score all 20 ordered epoch candidates from one Step 4 sweep run.",
+        help="Score the three fixed-epoch candidates from one Step 4 sweep run.",
     )
     parser.add_argument("--manifest", type=Path, default=None)
     parser.add_argument("--candidate-root", type=Path, default=None)

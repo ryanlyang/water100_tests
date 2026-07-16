@@ -25,10 +25,12 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 
+from .config import candidate_epochs
 from .manifest_provenance import (
     ManifestProvenanceError,
     validate_manifest_bundle,
 )
+from .storage import assert_storage_budget
 
 
 PUBLIC_MANIFEST_REQUIRED = {
@@ -821,7 +823,8 @@ def _completed_run_from_disk(
     metrics_path: Path,
     checkpoints_dir: Path,
     summary_path: Path,
-    expected_epochs: int,
+    expected_training_epochs: int,
+    expected_candidate_epochs: List[int],
     run: SweepRun,
     training_fingerprint: str,
     manifest_hashes: Mapping[str, str],
@@ -831,9 +834,9 @@ def _completed_run_from_disk(
     if not metrics_path.is_file() or not summary_path.is_file():
         return False
     metrics = pd.read_csv(metrics_path)
-    if len(metrics) != expected_epochs or set(metrics["epoch"].astype(int)) != set(
-        range(1, expected_epochs + 1)
-    ):
+    if len(metrics) != len(expected_candidate_epochs) or metrics[
+        "epoch"
+    ].astype(int).tolist() != expected_candidate_epochs:
         return False
     checkpoint_provenance = []
     expected_source_tree = source_tree_provenance()["source_tree_sha256"]
@@ -876,6 +879,10 @@ def _completed_run_from_disk(
         summary = json.load(handle)
     if summary.get("run") != asdict(run):
         raise CandidateTrainingError("Completed-run summary has a different run specification.")
+    if int(summary.get("epochs", -1)) != expected_training_epochs:
+        raise CandidateTrainingError("Completed-run summary has a different training length.")
+    if summary.get("candidate_epochs") != expected_candidate_epochs:
+        raise CandidateTrainingError("Completed-run summary has different candidate epochs.")
     if summary.get("training_fingerprint") != training_fingerprint:
         raise CandidateTrainingError("Completed-run summary has a stale training fingerprint.")
     if summary.get("manifest_sha256") != dict(manifest_hashes):
@@ -947,6 +954,9 @@ def train_candidate_run(
     summary_path = run_dir / "run_summary.json"
     resume_path = run_dir / "resume_state.pt"
     epochs = int(config["training"]["epochs"])
+    selected_epochs = candidate_epochs(config)
+    selected_epoch_set = set(selected_epochs)
+    output_root = Path(config["paths"]["output_root"])
     if stop_after_epoch is not None and not (1 <= stop_after_epoch < epochs):
         raise CandidateTrainingError(
             f"stop_after_epoch must be in [1, {epochs - 1}] for a resumable smoke run."
@@ -1003,6 +1013,7 @@ def train_candidate_run(
         checkpoints_dir,
         summary_path,
         epochs,
+        selected_epochs,
         run,
         training_fingerprint,
         manifest_hashes,
@@ -1020,6 +1031,7 @@ def train_candidate_run(
             f"Partial metrics exist without a resume state in {run_dir}. Refusing to "
             "restart this run under the same ID."
         )
+    assert_storage_budget(config, output_root, stage=f"candidate_run:{run.run_id}")
 
     if device_name.startswith("cuda") and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is unavailable.")
@@ -1116,8 +1128,13 @@ def train_candidate_run(
         scheduler.load_state_dict(resume["scheduler_state_dict"])
         metric_rows = list(resume["metric_rows"])
         completed_epoch = int(resume["completed_epoch"])
-        if completed_epoch != len(metric_rows):
-            raise CandidateTrainingError("Resume epoch and metric-row count disagree.")
+        expected_completed_candidates = [
+            epoch for epoch in selected_epochs if epoch <= completed_epoch
+        ]
+        if [int(row["epoch"]) for row in metric_rows] != expected_completed_candidates:
+            raise CandidateTrainingError(
+                "Resume candidate rows disagree with its completed training epoch."
+            )
         if metrics_path.is_file():
             disk_metrics = pd.read_csv(metrics_path)
             if len(disk_metrics) > len(metric_rows):
@@ -1169,50 +1186,57 @@ def train_candidate_run(
             optimizer=optimizer,
             scheduler=scheduler,
         )
-        # Candidate selection is locked to one ordinary float32 holdout pass.
-        # Training may use bf16 autocast, but Vanilla and FCV rank these values.
-        validation_metrics = _run_epoch(
-            model,
-            loaders["biased_val"],
-            criterion,
-            device,
-            "float32",
-        )
-        checkpoint_path = checkpoints_dir / f"epoch_{epoch:03d}.pt"
-        metric_row = {
-            "run_index": run.run_index,
-            "candidate_id": run.candidate_id(epoch),
-            "epoch": epoch,
-            "model_name": str(config["model"]["name"]),
-            "seed": run.seed,
-            "learning_rate": run.learning_rate,
-            "weight_decay": run.weight_decay,
-            "train_loss": train_metrics["loss"],
-            "train_accuracy": train_metrics["accuracy"],
-            "biased_val_loss": validation_metrics["loss"],
-            "biased_val_accuracy": validation_metrics["accuracy"],
-            "lr_epoch_start": lr_epoch_start,
-            "lr_epoch_end": float(optimizer.param_groups[0]["lr"]),
-            "checkpoint_path": str(checkpoint_path.resolve()),
-            "checkpoint_sha256": "pending",
-            "epoch_seconds": time.time() - epoch_started,
-        }
-        candidate_payload = _candidate_checkpoint_payload(
-            model,
-            config,
-            run,
-            epoch,
-            metric_row,
-            manifest_hashes,
-            training_fingerprint,
-            versions,
-            initial_model_state_sha256,
-            pretrained_backbone_state_sha256,
-            pretrained_provenance,
-        )
-        _atomic_torch_save(candidate_payload, checkpoint_path)
-        metric_row["checkpoint_sha256"] = _sha256_file(checkpoint_path)
-        metric_rows.append(metric_row)
+        candidate_payload = None
+        if epoch in selected_epoch_set:
+            assert_storage_budget(
+                config,
+                output_root,
+                stage=f"candidate_checkpoint:{run.candidate_id(epoch)}",
+            )
+            # Only the three epochs fixed before training enter any selector.
+            # Their ordinary holdout pass is always float32.
+            validation_metrics = _run_epoch(
+                model,
+                loaders["biased_val"],
+                criterion,
+                device,
+                "float32",
+            )
+            checkpoint_path = checkpoints_dir / f"epoch_{epoch:03d}.pt"
+            metric_row = {
+                "run_index": run.run_index,
+                "candidate_id": run.candidate_id(epoch),
+                "epoch": epoch,
+                "model_name": str(config["model"]["name"]),
+                "seed": run.seed,
+                "learning_rate": run.learning_rate,
+                "weight_decay": run.weight_decay,
+                "train_loss": train_metrics["loss"],
+                "train_accuracy": train_metrics["accuracy"],
+                "biased_val_loss": validation_metrics["loss"],
+                "biased_val_accuracy": validation_metrics["accuracy"],
+                "lr_epoch_start": lr_epoch_start,
+                "lr_epoch_end": float(optimizer.param_groups[0]["lr"]),
+                "checkpoint_path": str(checkpoint_path.resolve()),
+                "checkpoint_sha256": "pending",
+                "epoch_seconds": time.time() - epoch_started,
+            }
+            candidate_payload = _candidate_checkpoint_payload(
+                model,
+                config,
+                run,
+                epoch,
+                metric_row,
+                manifest_hashes,
+                training_fingerprint,
+                versions,
+                initial_model_state_sha256,
+                pretrained_backbone_state_sha256,
+                pretrained_provenance,
+            )
+            _atomic_torch_save(candidate_payload, checkpoint_path)
+            metric_row["checkpoint_sha256"] = _sha256_file(checkpoint_path)
+            metric_rows.append(metric_row)
         resume_payload = {
             "schema_version": 1,
             "artifact_type": "fcv_vit_candidate_resume_state",
@@ -1234,7 +1258,11 @@ def train_candidate_run(
                 else None
             ),
             "manifest_sha256": manifest_hashes,
-            "model_state_dict": candidate_payload["model_state_dict"],
+            "model_state_dict": (
+                candidate_payload["model_state_dict"]
+                if candidate_payload is not None
+                else _state_dict_cpu(model.state_dict())
+            ),
             "optimizer_state_dict": _recursive_cpu(optimizer.state_dict()),
             "scheduler_state_dict": scheduler.state_dict(),
             "rng_state": _rng_state(train_generator),
@@ -1246,15 +1274,24 @@ def train_candidate_run(
                 "Simulated abrupt interruption after resume-state commit and before "
                 "metrics.csv commit. Reinvoke the run to exercise recovery."
             )
-        _atomic_csv(pd.DataFrame(metric_rows, columns=METRIC_COLUMNS), metrics_path)
-        print(
-            f"[CANDIDATE] run={run.run_index:02d} epoch={epoch:02d}/{epochs} "
-            f"train_acc={train_metrics['accuracy']:.4f} "
-            f"biased_val_acc={validation_metrics['accuracy']:.4f} "
-            f"biased_val_loss={validation_metrics['loss']:.6f} "
-            f"lr={metric_row['lr_epoch_end']:.3e}",
-            flush=True,
-        )
+        if metric_rows:
+            _atomic_csv(pd.DataFrame(metric_rows, columns=METRIC_COLUMNS), metrics_path)
+        if candidate_payload is not None:
+            print(
+                f"[CANDIDATE] run={run.run_index:02d} epoch={epoch:02d}/{epochs} "
+                f"train_acc={train_metrics['accuracy']:.4f} "
+                f"biased_val_acc={validation_metrics['accuracy']:.4f} "
+                f"biased_val_loss={validation_metrics['loss']:.6f} "
+                f"lr={metric_row['lr_epoch_end']:.3e}",
+                flush=True,
+            )
+        else:
+            print(
+                f"[TRAIN] run={run.run_index:02d} epoch={epoch:02d}/{epochs} "
+                f"train_acc={train_metrics['accuracy']:.4f} "
+                f"lr={float(optimizer.param_groups[0]['lr']):.3e}",
+                flush=True,
+            )
         if stop_after_epoch is not None and epoch >= stop_after_epoch:
             return {
                 "status": "paused_for_smoke_resume",
@@ -1296,6 +1333,7 @@ def train_candidate_run(
         "manifest_sha256": manifest_hashes,
         "dataset_sizes": {key: len(value) for key, value in datasets.items()},
         "epochs": epochs,
+        "candidate_epochs": selected_epochs,
         "candidate_count": int(len(metrics)),
         "best_biased_val_accuracy_candidate": str(best_accuracy["candidate_id"]),
         "best_biased_val_accuracy": float(best_accuracy["biased_val_accuracy"]),
@@ -1323,7 +1361,7 @@ def aggregate_candidate_metrics(
     candidate_root = Path(candidate_root)
     output_csv = Path(output_csv)
     summary_path = Path(summary_path)
-    epochs = int(config["training"]["epochs"])
+    selected_epochs = candidate_epochs(config)
     frames = []
     missing_runs = []
     incomplete_runs = []
@@ -1349,10 +1387,10 @@ def aggregate_candidate_metrics(
             raise CandidateTrainingError(
                 f"{metrics_path} is missing metric columns: {missing_columns}"
             )
-        expected_epochs = set(range(1, epochs + 1))
-        expected_candidate_ids = {run.candidate_id(epoch) for epoch in expected_epochs}
+        expected_epochs = set(selected_epochs)
+        expected_candidate_ids = {run.candidate_id(epoch) for epoch in selected_epochs}
         run_is_incomplete = (
-            len(frame) != epochs
+            len(frame) != len(selected_epochs)
             or set(frame["epoch"].astype(int)) != expected_epochs
             or set(frame["candidate_id"].astype(str)) != expected_candidate_ids
         )
@@ -1414,6 +1452,10 @@ def aggregate_candidate_metrics(
             if run_summary.get("run") != asdict(run):
                 raise CandidateTrainingError(
                     f"{run_summary_path} has the wrong run specification."
+                )
+            if run_summary.get("candidate_epochs") != selected_epochs:
+                raise CandidateTrainingError(
+                    f"{run_summary_path} has the wrong candidate epochs."
                 )
             if run_summary.get("training_fingerprint") != expected_fingerprint:
                 raise CandidateTrainingError(
@@ -1566,6 +1608,7 @@ def aggregate_candidate_metrics(
         "status": "complete" if not missing_runs and not incomplete_runs else "incomplete",
         "candidate_count": int(len(combined)),
         "expected_candidate_count": expected_candidates,
+        "candidate_epochs": selected_epochs,
         "complete_run_count": int(
             len(enumerate_sweep_runs(config)) - len(missing_runs) - len(incomplete_runs)
         ),

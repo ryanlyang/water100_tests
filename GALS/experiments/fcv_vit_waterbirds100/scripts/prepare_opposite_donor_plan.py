@@ -14,7 +14,7 @@ SRC_ROOT = EXPERIMENT_ROOT / "src"
 sys.path.insert(0, str(SRC_ROOT))
 
 from fcv.candidate_training import get_sweep_run  # noqa: E402
-from fcv.config import load_and_validate_config  # noqa: E402
+from fcv.config import candidate_epochs, load_and_validate_config  # noqa: E402
 from fcv.fcv_scoring import (  # noqa: E402
     load_background_bank,
     prepare_opposite_donor_plan,
@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--token-bank-dir", type=Path, default=None)
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--reference-run-index", type=int, default=0)
-    parser.add_argument("--reference-epoch", type=int, default=1)
+    parser.add_argument("--reference-epoch", type=int, default=20)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -58,9 +58,9 @@ def main() -> None:
     output = args.output or (
         output_root / config["outputs"]["fcv_scores"] / "opposite_donor_plan.pt"
     )
-    epochs = int(config["training"]["epochs"])
-    if args.reference_epoch < 1 or args.reference_epoch > epochs:
-        raise ValueError(f"reference_epoch must be in [1, {epochs}].")
+    selected_epochs = candidate_epochs(config)
+    if args.reference_epoch not in selected_epochs:
+        raise ValueError(f"reference_epoch must be in {selected_epochs}.")
     run = get_sweep_run(config, args.reference_run_index)
     candidate_id = run.candidate_id(args.reference_epoch)
     source = prepare_token_bank_source(

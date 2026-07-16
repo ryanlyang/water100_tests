@@ -19,46 +19,47 @@ acceptance failure is raised.
 
 `cache_pretrained_model.py` validates and caches the locked timm checkpoint
 before GPUs are requested. `train_candidate.py` trains or resumes one indexed
-LR/weight-decay/seed run and saves all 20 epoch candidates.
+LR/weight-decay/seed run for 20 epochs and saves only fixed epochs 5, 10, and
+20 as candidates.
 `submit_step4_candidate_pool.sh` submits the cache job followed by indices
-0--26 as a Tigris GH200 Slurm array. `aggregate_candidate_metrics.py` validates
-and combines the independent metric files without concurrent CSV writes.
+0--26 as a Tigris GH200 Slurm array capped at four concurrent workers.
+`aggregate_candidate_metrics.py` validates the 81 independent candidates.
+`prune_completed_resume_states.py` then removes the 27 optimizer-bearing resume
+files only after strict pool validation and records a recovery-safe receipt.
 
 `verify_vit_patch_forward.py` implements the Step 5 acceptance check. It
 extracts raw patches before positional embeddings, resumes through the model's
 own timm token/position and classifier path, and exits nonzero unless the
 reconstructed logits have maximum absolute error below `1e-5`.
 
-`build_background_token_banks.py` implements Step 6. With `--checkpoint` it
-builds one candidate's land/water banks; with `--run-index` it processes all 20
-epoch checkpoints belonging to one Step 4 sweep run while reusing the same
-validated public validation loader and patch-mask artifact.
-`submit_step6_token_banks.sh` first persists mandatory pretrained and
-real-candidate reconstruction reports, then submits run indices 0--26 as a
-Tigris GH200 array. Steps 6--8 require and record those report hashes.
-`aggregate_token_banks.py` verifies that every candidate has both context banks
-and writes the compact pool index used by Step 7.
+`build_background_token_banks.py` implements the Step 6 bank builder.
+`prepare_streaming_plans.py` builds one reference bank and both shared random
+plans. `stream_score_run.py` processes the three candidates in one sweep run:
+it builds banks, scores FCV and all controls, hashes retained artifacts, and
+deletes the bank tensors behind a validated cleanup receipt.
+`submit_step6_8_streaming.sh` runs reconstruction, plan preparation, and a
+27-task Tigris array capped at four workers, followed by strict 81-candidate
+aggregation. The old standalone Step 6/7/8 submitters are intentionally
+disabled because accumulating a full bank pool violates the storage protocol.
 
 `prepare_opposite_donor_plan.py` implements the candidate-independent random
 draw cache for Step 7. `score_fcv_candidates.py` applies those draws to one
-candidate or all 20 checkpoints in a sweep run and writes auditable per-image
-scores. `submit_step7_fcv_scoring.sh` chains donor-plan preparation, a 27-task
-Tigris GH200 array, and diagnostic aggregation. `aggregate_fcv_scores.py`
-strictly validates the full 540-candidate FCV metric table unless
+candidate or the three fixed checkpoints in a sweep run and writes auditable
+per-image scores. `aggregate_fcv_scores.py` strictly validates the full
+81-candidate FCV metric table, accepting validated cleanup receipts in place
+of bank tensors, unless
 `--allow-incomplete` is requested for failure diagnosis.
 
 `prepare_control_plan.py` caches the Step 8 same-context donors, matched random
 positions, shuffled teacher masks, and opposite-class evidence donors.
 `score_fcv_controls.py` scores all four controls with one candidate model load.
-`submit_step8_fcv_controls.sh` runs plan preparation, a 27-task Tigris GH200
-array, and diagnostic aggregation. `aggregate_fcv_controls.py` validates the
-full candidate/control matrix.
+`aggregate_fcv_controls.py` validates the full candidate/control matrix.
 
-`score_oracle_candidates.py` evaluates one checkpoint or one 20-epoch sweep
+`score_oracle_candidates.py` evaluates one checkpoint or one three-candidate sweep
 run on the analysis-only original mixed validation split and writes a hashed
 per-example file with labels, groups, logits/probabilities, predictions,
 correctness, and loss. `aggregate_oracle_metrics.py` recomputes all selector
-metrics from those raw files and verifies the complete 540-candidate Oracle
+metrics from those raw files and verifies the complete 81-candidate Oracle
 index. `build_selection_table.py` joins the strict Step 4, 7, 8, and Oracle
 indexes and applies every locked Step 9 selector with deterministic ties.
 `submit_step9_selectors.sh` submits Oracle scoring, separate partial
@@ -75,11 +76,11 @@ predictions, recomputes aggregate metrics from them, and writes
 on the submit node and launches the resumable Tigris GH200 evaluation job.
 
 `score_pool_test_candidates.py` implements the Step 11 post-hoc test pass over
-one checkpoint or one complete 20-epoch sweep run. Each candidate path and
+one checkpoint or one complete three-candidate sweep run. Each candidate path and
 SHA-256 must match the complete mapping frozen by Step 9 before test access.
 Each candidate also emits hashed per-example logits/predictions from which the
 pool aggregate recomputes its metrics.
-`aggregate_pool_test_scores.py` verifies all 540 provenance-bound summaries;
+`aggregate_pool_test_scores.py` verifies all 81 provenance-bound summaries;
 `--allow-incomplete` is diagnostic only. `compute_gap_closure.py` revalidates
 the frozen Step 9 and Step 10 artifacts, computes the raw gap-closure fraction,
 and reports the deterministic full-pool upper bound. The upper-bound scores are

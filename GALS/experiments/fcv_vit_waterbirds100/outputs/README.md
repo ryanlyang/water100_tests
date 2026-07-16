@@ -19,9 +19,16 @@ Large checkpoints, token banks, score files, and plots are intentionally not
 tracked in the source tree.
 
 During Step 4, `candidate_models/` contains one directory per sweep run. Each
-directory has 20 float32 epoch checkpoints, `metrics.csv`, `run_summary.json`,
-and a resumable optimizer/scheduler state. Keep every epoch checkpoint until
-Step 12 rank/scatter analysis has completed successfully.
+directory has three float32 checkpoints (epochs 5, 10, and 20), `metrics.csv`,
+and `run_summary.json`. The optimizer-bearing resume state is removed only
+after the complete 81-candidate pool validates; the cleanup receipt remains.
+Keep all 81 candidate checkpoints until Step 12 completes successfully.
+
+During the combined Steps 6--8 pipeline, `token_banks/` contains compact bank
+summaries and `cleanup_receipts/`. The two large bank tensors for a candidate
+exist only while that candidate is being scored. At most four sweep runs are
+streamed concurrently. A receipt is finalized only after the candidate's FCV
+CSV, all four control CSVs, summaries, checkpoint, and bank hashes validate.
 
 During Step 7, `fcv_scores/` contains one shared cached donor-index plan plus a
 per-image CSV and provenance summary for every candidate. The aggregate CSV
@@ -49,7 +56,7 @@ did not affect selection.
 During Step 11, `selection_results/candidate_pool_test_scores/` contains one
 resumable post-hoc test summary and one hashed per-example record file for
 every candidate. The strict
-`candidate_pool_test_scores.csv` index is complete only at 540 rows and marks
+`candidate_pool_test_scores.csv` index is complete only at 81 rows and marks
 the pool as ineligible for selection. `gap_closure_summary.csv` reports the raw
 FCV-to-Oracle gap fraction, selected candidate identities, and the unfair
 candidate-pool upper bound. Its JSON sidecar binds the result to the frozen

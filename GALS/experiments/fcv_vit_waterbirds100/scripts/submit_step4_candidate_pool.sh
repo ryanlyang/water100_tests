@@ -28,6 +28,8 @@ if [[ ! -f "$OUTPUT/patch_masks/patch_masks_val.pt" ]]; then
   exit 1
 fi
 "$ENV/bin/python" experiments/fcv_vit_waterbirds100/scripts/validate_patch_masks.py >/dev/null
+"$ENV/bin/python" experiments/fcv_vit_waterbirds100/scripts/check_storage_budget.py \
+  --stage submit_step4 >/dev/null
 
 cache_job=$(sbatch --parsable \
   experiments/fcv_vit_waterbirds100/slurm/cache_pretrained_model.sbatch)
@@ -35,8 +37,12 @@ array_job=$(sbatch --parsable --dependency="afterok:${cache_job}" \
   experiments/fcv_vit_waterbirds100/slurm/train_candidate_array.sbatch)
 aggregate_job=$(sbatch --parsable --dependency="afterany:${array_job}" \
   experiments/fcv_vit_waterbirds100/slurm/aggregate_candidate_metrics.sbatch)
+finalize_job=$(sbatch --parsable --dependency="afterok:${array_job}:${aggregate_job}" \
+  experiments/fcv_vit_waterbirds100/slurm/finalize_candidate_pool.sbatch)
 
 echo "Pretrained-model cache job: $cache_job"
 echo "Candidate array job: $array_job (starts after cache validation)"
 echo "Diagnostic aggregation job: $aggregate_job (runs after the array exits)"
-echo "A complete aggregate requires all 27 tasks to finish all 20 epochs."
+echo "Strict finalization/cleanup job: $finalize_job"
+echo "All runs train 20 epochs, but only epochs 5, 10, and 20 form 81 candidates."
+echo "The finalizer deletes optimizer-bearing resume states only after strict validation."

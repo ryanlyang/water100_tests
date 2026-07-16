@@ -31,6 +31,7 @@ from fcv.candidate_training import (  # noqa: E402
     warmup_cosine_factor,
 )
 from fcv.config import ConfigError, load_and_validate_config  # noqa: E402
+from fcv.cleanup import prune_completed_resume_states  # noqa: E402
 
 
 class CandidateTrainingTest(unittest.TestCase):
@@ -144,6 +145,15 @@ class CandidateTrainingTest(unittest.TestCase):
             "control_forward_batch": lambda cfg: cfg["execution"].update(
                 {"control_counterfactual_forward_batch_size": 128}
             ),
+            "candidate_epochs": lambda cfg: cfg["candidate_pool"].update(
+                {"candidate_epochs": [1, 10, 20]}
+            ),
+            "storage_guard": lambda cfg: cfg["storage"].update(
+                {"launch_guard_gib": 39}
+            ),
+            "stream_concurrency": lambda cfg: cfg["storage"].update(
+                {"max_concurrent_streaming_runs": 8}
+            ),
         }
         for name, mutate in cases.items():
             with self.subTest(name=name):
@@ -234,13 +244,13 @@ class CandidateTrainingTest(unittest.TestCase):
         pretrained_summary_sha256 = hashlib.sha256(
             pretrained_summary_path.read_bytes()
         ).hexdigest()
-        rows_per_run = int(self.config["training"]["epochs"])
+        selected_epochs = list(self.config["candidate_pool"]["candidate_epochs"])
         for run in enumerate_sweep_runs(self.config):
             run_dir = candidate_root / run.run_id
             checkpoints = run_dir / "checkpoints"
             checkpoints.mkdir(parents=True)
             rows = []
-            for epoch in range(1, rows_per_run + 1):
+            for epoch in selected_epochs:
                 checkpoint = checkpoints / f"epoch_{epoch:03d}.pt"
                 row = {
                         "run_index": run.run_index,
@@ -302,6 +312,8 @@ class CandidateTrainingTest(unittest.TestCase):
                 rows.append(row)
             metrics_path = run_dir / "metrics.csv"
             pd.DataFrame(rows, columns=METRIC_COLUMNS).to_csv(metrics_path, index=False)
+            resume_path = run_dir / "resume_state.pt"
+            resume_path.write_bytes(f"resume-{run.run_index}".encode("utf-8"))
             summary = {
                 "run": {
                     "run_index": run.run_index,
@@ -312,6 +324,9 @@ class CandidateTrainingTest(unittest.TestCase):
                 "training_fingerprint": candidate_training.candidate_training_fingerprint(
                     self.config
                 ),
+                "status": "complete",
+                "run_id": run.run_id,
+                "candidate_epochs": selected_epochs,
                 "manifest_sha256": {"candidate_train": "a", "biased_validation": "b"},
                 "software_versions": candidate_training.software_versions(),
                 "software_fingerprint": candidate_training.software_fingerprint(),
@@ -328,6 +343,7 @@ class CandidateTrainingTest(unittest.TestCase):
                 "pretrained_provenance_sha256": pretrained_summary_sha256,
                 "metrics_path": str(metrics_path.resolve()),
                 "metrics_sha256": hashlib.sha256(metrics_path.read_bytes()).hexdigest(),
+                "resume_state_path": str(resume_path.resolve()),
             }
             with (run_dir / "run_summary.json").open("w", encoding="utf-8") as handle:
                 json.dump(summary, handle)
@@ -339,9 +355,21 @@ class CandidateTrainingTest(unittest.TestCase):
         )
         combined = pd.read_csv(output_csv)
         self.assertEqual(result["status"], "complete")
-        self.assertEqual(result["candidate_count"], 540)
-        self.assertEqual(len(combined), 540)
+        self.assertEqual(result["candidate_count"], 81)
+        self.assertEqual(len(combined), 81)
         self.assertFalse(combined["candidate_id"].duplicated().any())
+
+        cleanup_receipt = candidate_root / "resume_state_cleanup_receipt.json"
+        cleanup = prune_completed_resume_states(
+            self.config, candidate_root, cleanup_receipt
+        )
+        self.assertEqual(cleanup["status"], "complete")
+        self.assertEqual(len(cleanup["deleted_resume_states"]), 27)
+        self.assertFalse(any(candidate_root.rglob("resume_state.pt")))
+        reused_cleanup = prune_completed_resume_states(
+            self.config, candidate_root, cleanup_receipt
+        )
+        self.assertEqual(reused_cleanup["status"], "complete")
 
         # Even if a mutable run summary is updated to bind a modified CSV,
         # checkpoint-embedded selector metrics remain authoritative.
@@ -419,6 +447,7 @@ class CandidateTrainingTest(unittest.TestCase):
 
         config = deepcopy(self.config)
         config["training"]["epochs"] = 2
+        config["candidate_pool"]["candidate_epochs"] = [1, 2]
         config["training"]["batch_size"] = 2
         config["training"]["num_workers"] = 0
         config["training"]["precision"] = "float32"
@@ -540,7 +569,7 @@ class CandidateTrainingTest(unittest.TestCase):
         checkpoint_dir = run_dir / "checkpoints"
         checkpoint_dir.mkdir(parents=True)
         rows = []
-        for epoch in range(1, 21):
+        for epoch in self.config["candidate_pool"]["candidate_epochs"]:
             path = checkpoint_dir / f"epoch_{epoch:03d}.pt"
             path.write_bytes(f"checkpoint-{epoch}".encode())
             rows.append(
@@ -576,13 +605,15 @@ class CandidateTrainingTest(unittest.TestCase):
                     "training_fingerprint": candidate_training.candidate_training_fingerprint(
                         self.config
                     ),
+                    "candidate_epochs": self.config["candidate_pool"]["candidate_epochs"],
                     "manifest_sha256": {"candidate_train": "a", "biased_validation": "b"},
                     "software_versions": candidate_training.software_versions(),
                     "software_fingerprint": candidate_training.software_fingerprint(),
                 },
                 handle,
             )
-        (checkpoint_dir / "epoch_001.pt").write_bytes(b"tampered")
+        first_epoch = self.config["candidate_pool"]["candidate_epochs"][0]
+        (checkpoint_dir / f"epoch_{first_epoch:03d}.pt").write_bytes(b"tampered")
         with self.assertRaisesRegex(CandidateTrainingError, "bytes changed"):
             aggregate_candidate_metrics(
                 self.config,

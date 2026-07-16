@@ -122,6 +122,7 @@ class SelectorTest(unittest.TestCase):
         config["training"]["weight_decays"] = [0.01]
         config["training"]["seeds"] = [0]
         config["training"]["epochs"] = 2
+        config["candidate_pool"]["candidate_epochs"] = [1, 2]
         config["candidate_pool"]["expected_training_runs"] = 1
         config["candidate_pool"]["expected_candidate_checkpoints"] = 2
         rows = []

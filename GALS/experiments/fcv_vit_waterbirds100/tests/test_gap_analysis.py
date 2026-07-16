@@ -397,6 +397,7 @@ class GapAnalysisTest(unittest.TestCase):
         config["training"]["weight_decays"] = [0.01]
         config["training"]["seeds"] = [0]
         config["training"]["epochs"] = 2
+        config["candidate_pool"]["candidate_epochs"] = [1, 2]
         config["candidate_pool"]["expected_training_runs"] = 1
         config["candidate_pool"]["expected_candidate_checkpoints"] = 2
         frozen, _, _ = self._make_frozen_and_final((0.4, 0.6, 0.8))

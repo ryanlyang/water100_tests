@@ -48,7 +48,7 @@ be opened. These settings do not affect checkpoint selection.
 
 Step 11 locks gap closure to test worst-group accuracy and to the ordinary
 biased-validation, equal-weight FCV, and Oracle balanced-group selectors. The
-reported ratio is raw rather than clipped. The complete 540-checkpoint test
+reported ratio is raw rather than clipped. The complete 81-checkpoint test
 pool is evaluated only after selection to provide an explicitly unfair upper
 bound; those scores are prohibited from changing any selected checkpoint.
 Every pool checkpoint must retain the exact path and SHA-256 frozen by Step 9.

@@ -25,6 +25,11 @@ shortcut-breaking examples.
 - Candidate training is exactly locked to batch size 128, two warm-up epochs,
   ImageNet normalization, random-resized-crop scale `[0.8, 1.0]`, horizontal
   flip probability 0.5, and `Resize(256)+CenterCrop(224)` evaluation geometry.
+- Every run trains for 20 epochs, but only precommitted epochs 5, 10, and 20
+  are candidates; the LR/WD/seed grid therefore contains 81 checkpoints.
+- The output root is guarded at 35 GiB against a 40 GiB hard budget. Token
+  banks are streamed with at most four workers and deleted only after FCV and
+  all controls pass provenance validation.
 - Token extraction, FCV/control forward chunking, Oracle inference, and final
   test inference use locked batch/worker settings. Those settings are stored
   in summaries and checked by every reuse and aggregation gate.
@@ -43,17 +48,18 @@ The first pool contains 27 training runs:
 3 learning rates x 3 weight decays x 3 seeds = 27 runs
 ```
 
-Every epoch is a candidate, yielding:
+Each run still trains for 20 epochs, but the candidate epochs are fixed before
+training to 5, 10, and 20:
 
 ```text
-27 runs x 20 epochs = 540 candidate checkpoints
+27 runs x 3 fixed epochs = 81 candidate checkpoints
 ```
 
-Step 4 retains all 540 float32 epoch checkpoints until FCV and Oracle selector
-analysis is complete. This requires roughly 45--50 GB for ViT-S/16 weights,
-plus transient resume states. Non-selected candidates may be pruned only after
-Step 12 rank/scatter analysis completes successfully; Steps 11--12 require all
-540 original checkpoint paths and hashes.
+Step 4 retains all 81 float32 checkpoints through Step 12. The 27
+optimizer-bearing resume states are deleted only after strict candidate-pool
+aggregation proves that every checkpoint and metric row is complete. The
+study output has a 35 GiB pre-launch guard and a hard 40 GiB budget; large
+token banks are streamed and never accumulated as a full pool.
 
 ## Inspect the configuration
 
@@ -151,8 +157,8 @@ bash experiments/fcv_vit_waterbirds100/scripts/submit_step4_candidate_pool.sh
 ```
 
 The array ordering is fixed as learning rate, then weight decay, then seed.
-Each task trains for 20 epochs and writes one candidate checkpoint and one
-biased-validation metric row per epoch. Re-submitting an interrupted array task
+Each task trains for 20 epochs and writes checkpoints and biased-validation
+metric rows only at epochs 5, 10, and 20. Re-submitting an interrupted array task
 automatically resumes from its last committed epoch. The epoch commit order is
 checkpoint, resume state, then public metrics CSV; if interruption occurs after
 the resume commit but before CSV publication, the next invocation validates
@@ -167,7 +173,9 @@ selector may consume it. The executable-source hash includes Python entry
 points, shell submission wrappers, and Slurm job files.
 
 The dependent aggregation job writes a diagnostic table even when an array
-task fails. Once all tasks are complete, enforce the full 540-candidate check:
+task fails. A second dependent finalizer strictly validates all 81 candidates
+and then removes completed resume states using a hashed cleanup receipt. To
+repeat the strict check manually:
 
 ```bash
 python experiments/fcv_vit_waterbirds100/scripts/aggregate_candidate_metrics.py
@@ -199,7 +207,7 @@ Verify any saved Step 4 candidate by supplying its checkpoint:
 
 ```bash
 python experiments/fcv_vit_waterbirds100/scripts/verify_vit_patch_forward.py \
-  --checkpoint /path/to/candidate_models/run_.../checkpoints/epoch_001.pt \
+  --checkpoint /path/to/candidate_models/run_.../checkpoints/epoch_005.pt \
   --output-report /home/ryreu/guided_cnn/logsWaterbird/fcv_vit_waterbirds100_first_study/preflight/reconstruction_candidate.json \
   --device cuda
 ```
@@ -208,8 +216,8 @@ Candidate loading is strict: artifact type, schema, training fingerprint,
 model metadata, and every state-dict key must match the active configuration.
 FCV verification requires `model.eval()` and passes only when normal and
 reconstructed logits differ by less than `1e-5` in maximum absolute value.
-The Step 6 submission wrapper schedules both reconstruction checks inside a
-GH200 preflight job. The token-bank array has an `afterok` dependency on that
+The streaming Steps 6--8 wrapper schedules both reconstruction checks inside a
+GH200 preflight job. The scoring array has an `afterok` dependency on that
 job, and Steps 6--8 refuse to run if either report, its configuration
 fingerprint, or the candidate bytes have changed.
 
@@ -237,48 +245,66 @@ teacher-map patch score. A source-image table maps those integer indices back
 to sample IDs, allowing Step 7 to exclude self-donors without duplicating a
 string for every token.
 
-After all Step 4 candidates are complete, submit Step 6 from the repository
-root:
+Steps 6--8 run as one bounded-storage pipeline. Submit it after Step 4 is
+strictly complete:
 
 ```bash
-bash experiments/fcv_vit_waterbirds100/scripts/submit_step6_token_banks.sh
+bash experiments/fcv_vit_waterbirds100/scripts/submit_step6_8_streaming.sh
 ```
 
-The submission script first enforces the complete 540-candidate Step 4 pool,
-then submits a GH200 reconstruction-preflight job for the locked pretrained
-model and a real Step 4 checkpoint. Only after that job passes does Slurm
-release the 27-task GH200 token-bank array, one task per
-LR/weight-decay/seed run; each task processes that run's 20 epoch checkpoints.
-Their hashes are required and recorded by Steps 6--8. Re-submission reuses
-completed banks whose checkpoint/config/manifest/mask/map/software provenance
-still matches. Partial writes are rebuilt atomically, while a stale completed
-summary requires `--overwrite`.
-Because the protocol retains float32 raw tokens for every candidate, the full
-bank pool can require substantial storage; check the output filesystem quota
-before submitting all 27 tasks.
+The wrapper first validates all 81 checkpoints and the 35 GiB launch guard,
+then runs the pretrained/real-checkpoint reconstruction gate. One reference
+candidate creates the shared donor and control plans. Slurm then releases a
+27-task array capped at four concurrent GH200 workers. Within each task, each
+of its three candidates follows this transaction:
 
-The dependent aggregation job intentionally permits incomplete output for
-diagnostics. After the array succeeds, enforce all 540 candidates and 1,080
-context banks with:
-
-```bash
-python experiments/fcv_vit_waterbirds100/scripts/aggregate_token_banks.py
+```text
+build two model-specific banks
+  -> score primary FCV
+  -> score all four controls
+  -> revalidate and hash every retained score artifact
+  -> write a prepared cleanup receipt
+  -> delete the two bank tensors
+  -> finalize and revalidate the cleanup receipt
 ```
+
+Bank summary JSON remains for provenance, while the large `.pt` banks do not.
+A complete receipt is accepted by strict FCV aggregation in place of live bank
+bytes. If scoring or provenance validation fails, deletion does not occur. If
+cleanup is interrupted, rerunning regenerates the candidate's banks and
+finishes the transaction. Re-submission skips only candidates whose completed
+receipt, checkpoint, score CSVs, control CSVs, and summaries still match.
 
 To build or inspect one candidate directly:
 
 ```bash
 python experiments/fcv_vit_waterbirds100/scripts/build_background_token_banks.py \
-  --checkpoint /path/to/candidate_models/run_.../checkpoints/epoch_001.pt \
+  --checkpoint /path/to/candidate_models/run_.../checkpoints/epoch_005.pt \
   --device cuda
 ```
 
-Before launching the full 540-candidate campaign, run the executable GH200
+Before launching the full 81-candidate campaign, run the executable GH200
 end-to-end smoke workflow:
 
 ```bash
 bash experiments/fcv_vit_waterbirds100/scripts/submit_smoke_one_candidate.sh
 ```
+
+### Queue the complete reduced study
+
+After the smoke test and Steps 2--3 are available, the entire reduced study
+can be submitted as one fail-closed dependency chain:
+
+```bash
+bash experiments/fcv_vit_waterbirds100/scripts/submit_full_81_candidate_study.sh
+```
+
+This queues candidate training, strict candidate finalization, streamed token
+banks and FCV controls, selector construction, frozen selected-checkpoint test
+evaluation, post-hoc full-pool test analysis, gap closure, and rank analysis.
+It retains only epochs 5, 10, and 20 (81 candidates total), limits the training
+and streaming arrays to four concurrent tasks, and deletes each candidate's
+token banks after its FCV and all control artifacts have validated.
 
 For one locked hyperparameter candidate, this deliberately injects an abrupt
 first-epoch failure after the resume-state commit but before `metrics.csv`,
@@ -297,7 +323,7 @@ written to the shared preflight directory used by the production gates.
 Step 7 first creates one shared, deterministic donor-index plan. The plan uses
 seed 0 and records five donor-token indices per safe target-background patch,
 sampling globally with replacement from the opposite class/context bank. The
-same integer draws are reused for all 540 checkpoints. Every candidate bank
+same integer draws are reused for all 81 checkpoints. Every candidate bank
 must have exactly the same source-image and source-patch provenance layout as
 the reference bank or scoring stops rather than silently changing donors.
 
@@ -308,16 +334,17 @@ land-context donor content. Ambiguous and evidence tokens remain untouched.
 The existing Step 5 resumed forward applies target positional embeddings after
 the replacement and computes all five counterfactual predictions.
 
-After the complete Step 6 pool is available, submit the resumable pipeline:
+Step 7 is executed inside the bounded Steps 6--8 pipeline. The following is
+the same one-time submission shown in Step 6; do not launch it a second time:
 
 ```bash
-bash experiments/fcv_vit_waterbirds100/scripts/submit_step7_fcv_scoring.sh
+bash experiments/fcv_vit_waterbirds100/scripts/submit_step6_8_streaming.sh
 ```
 
 The dependency chain is:
 
 ```text
-shared donor-plan job -> 27-task GH200 scoring array -> diagnostic aggregation
+reconstruction -> shared plans -> 27-task streaming array (max 4) -> strict aggregation
 ```
 
 Candidate outputs are:
@@ -349,7 +376,7 @@ Step 7 does not load Oracle or test
 metadata and does not implement the Step 8 control interventions.
 
 The dependent aggregation job allows incomplete output so it remains useful
-when an array task fails. After all scoring tasks finish, enforce all 540
+when an array task fails. After all scoring tasks finish, enforce all 81
 candidates explicitly:
 
 ```bash
@@ -366,7 +393,7 @@ To inspect one candidate directly:
 
 ```bash
 python experiments/fcv_vit_waterbirds100/scripts/score_fcv_candidates.py \
-  --checkpoint /path/to/candidate_models/run_.../checkpoints/epoch_001.pt \
+  --checkpoint /path/to/candidate_models/run_.../checkpoints/epoch_005.pt \
   --device cuda
 ```
 
@@ -391,16 +418,17 @@ evidence token values in that exact source-image/patch order. Evidence-swap
 targets are restricted to the main FCV-eligible cohort so sensitivity gaps are
 not confounded by evaluating different image sets.
 
-Submit Step 8 after the complete Step 7 pool exists:
+Step 8 immediately follows Step 7 for each live candidate bank. It is already
+included in the one-time combined submission:
 
 ```bash
-bash experiments/fcv_vit_waterbirds100/scripts/submit_step8_fcv_controls.sh
+bash experiments/fcv_vit_waterbirds100/scripts/submit_step6_8_streaming.sh
 ```
 
 The dependency chain is:
 
 ```text
-shared control-plan job -> 27-task GH200 control array -> diagnostic aggregation
+shared control plan -> per-candidate FCV -> four controls -> verified bank cleanup
 ```
 
 Each candidate writes:
@@ -425,8 +453,7 @@ swap also verifies that all non-replaced tokens are bit-identical, every
 replaced token exactly equals its planned donor, and each control cohort is not
 a complete no-op. Replacement counts and norm deltas are retained in the
 hashed per-image CSVs. After the array completes, enforce all
-540 candidates and
-2,160 control CSVs with:
+81 candidates and 324 control CSVs with:
 
 ```bash
 python experiments/fcv_vit_waterbirds100/scripts/aggregate_fcv_controls.py
@@ -436,7 +463,7 @@ To inspect one candidate directly:
 
 ```bash
 python experiments/fcv_vit_waterbirds100/scripts/score_fcv_controls.py \
-  --checkpoint /path/to/candidate_models/run_.../checkpoints/epoch_001.pt \
+  --checkpoint /path/to/candidate_models/run_.../checkpoints/epoch_005.pt \
   --device cuda
 ```
 
@@ -455,7 +482,7 @@ Submit the resumable Tigris pipeline after Steps 4, 7, and 8 are complete:
 bash experiments/fcv_vit_waterbirds100/scripts/submit_step9_selectors.sh
 ```
 
-The submit script first strictly validates all 540 unprivileged candidate,
+The submit script first strictly validates all 81 unprivileged candidate,
 FCV, and control rows. It then launches:
 
 ```text
@@ -575,7 +602,7 @@ The fraction is not clipped. A zero denominator is reported as undefined, and
 an Oracle value below the biased selector is retained with an explicit
 negative-gap status rather than hidden.
 
-Step 11 also evaluates all 540 candidates on test to report the candidate-pool
+Step 11 also evaluates all 81 candidates on test to report the candidate-pool
 upper bound. This maximum is explicitly post-hoc and unfair: it diagnoses
 whether a strong checkpoint exists in the pool but is never allowed to alter
 the frozen selector choices. The scorer itself—not only its submission

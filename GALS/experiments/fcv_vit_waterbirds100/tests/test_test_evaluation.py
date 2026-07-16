@@ -60,6 +60,7 @@ class FinalTestEvaluationTest(unittest.TestCase):
         self.config["training"]["weight_decays"] = [0.01]
         self.config["training"]["seeds"] = [0]
         self.config["training"]["epochs"] = 3
+        self.config["candidate_pool"]["candidate_epochs"] = [1, 2, 3]
         self.config["candidate_pool"]["expected_training_runs"] = 1
         self.config["candidate_pool"]["expected_candidate_checkpoints"] = 3
 

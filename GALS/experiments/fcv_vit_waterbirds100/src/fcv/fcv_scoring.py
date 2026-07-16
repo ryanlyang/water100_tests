@@ -31,6 +31,8 @@ from .candidate_training import (
     software_fingerprint,
     software_versions,
 )
+from .config import candidate_epochs
+from .storage import validate_cleanup_receipt
 from .token_banks import CONTEXT_NAMES, TokenBankError, TokenBankSource
 from .vit_counterfactual_forward import (
     extract_raw_patch_tokens,
@@ -1671,12 +1673,12 @@ def aggregate_fcv_score_summaries(
     donor_plan_path = Path(donor_plan_path).expanduser().resolve()
     donor_plan_sha256 = _sha256_file(donor_plan_path)
     expected_fingerprint = candidate_training_fingerprint(config)
-    epochs = int(config["training"]["epochs"])
+    selected_epochs = candidate_epochs(config)
     rows: List[Dict[str, Any]] = []
     missing: List[str] = []
     invalid: List[Dict[str, str]] = []
     for run in enumerate_sweep_runs(config):
-        for epoch in range(1, epochs + 1):
+        for epoch in selected_epochs:
             candidate_id = run.candidate_id(epoch)
             summary_path = score_dir / f"{candidate_id}_summary.json"
             if not summary_path.is_file():
@@ -1735,6 +1737,21 @@ def aggregate_fcv_score_summaries(
                         )
                         if not current_banks_valid:
                             break
+                if not current_banks_valid and isinstance(token_banks, Mapping):
+                    receipt_path = (
+                        Path(config["paths"]["output_root"])
+                        / config["outputs"]["token_banks"]
+                        / "cleanup_receipts"
+                        / f"{candidate_id}.json"
+                    )
+                    current_banks_valid = validate_cleanup_receipt(
+                        receipt_path,
+                        candidate_id=candidate_id,
+                        checkpoint_path=checkpoint_path,
+                        checkpoint_sha256=checkpoint_sha256,
+                        training_fingerprint=expected_fingerprint,
+                        token_banks=token_banks,
+                    ) is not None
                 if not valid or (
                     not score_path.is_file()
                     or score_path.stat().st_size

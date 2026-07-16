@@ -24,7 +24,7 @@ DEFAULT_CONFIG = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Combine per-run biased-validation metrics into the 540-candidate table."
+        description="Combine per-run metrics into the locked 81-candidate table."
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--candidate-root", type=Path, default=None)

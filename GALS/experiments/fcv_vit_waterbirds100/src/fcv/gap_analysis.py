@@ -15,6 +15,7 @@ from .candidate_training import (
     candidate_training_fingerprint,
     enumerate_sweep_runs,
 )
+from .config import candidate_epochs
 from .test_evaluation import (
     FinalTestSource,
     FrozenSelection,
@@ -174,7 +175,7 @@ def _candidate_identity(
             f"Checkpoint is not in the locked candidate pool: {checkpoint_path}"
         )
     run = runs[run_id]
-    if epoch < 1 or epoch > int(config["training"]["epochs"]):
+    if epoch not in candidate_epochs(config):
         raise GapAnalysisError(f"Candidate epoch is outside the locked pool: {epoch}")
     return run, epoch, run.candidate_id(epoch)
 

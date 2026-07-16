@@ -18,6 +18,7 @@ from .candidate_training import (
     software_fingerprint,
     software_versions,
 )
+from .config import candidate_epochs
 from .fcv_scoring import (
     OPPOSITE_CONTEXT,
     load_background_bank,
@@ -77,6 +78,32 @@ def _atomic_csv(frame: pd.DataFrame, path: Path) -> None:
     temporary.replace(path)
 
 
+def _canonical_probability_draw_statistics(
+    probabilities: torch.Tensor,
+) -> tuple[List[float], float, float]:
+    """Return draw values and statistics using their persisted representation.
+
+    CUDA reductions are allowed to accumulate float32 values in a different
+    order across architectures.  In particular, GH200 can differ by more than
+    the strict artifact-validation tolerance from NumPy's float64 mean over
+    the values subsequently written to JSON.  The draw list is the canonical
+    raw artifact, so derive every persisted statistic from that exact list.
+    """
+
+    if probabilities.ndim != 1 or probabilities.numel() == 0:
+        raise FCVControlError(
+            "Control probability draws must be a non-empty one-dimensional tensor."
+        )
+    values = [
+        float(value)
+        for value in probabilities.detach().to(device="cpu").tolist()
+    ]
+    array = np.asarray(values, dtype=np.float64)
+    if not np.isfinite(array).all() or ((array < 0.0) | (array > 1.0)).any():
+        raise FCVControlError("Control probability draws are invalid.")
+    return values, float(array.mean()), float(array.std(ddof=0))
+
+
 def recompute_control_metrics_from_frame(frame: pd.DataFrame) -> Dict[str, Any]:
     """Recompute one control's aggregate metrics from its hashed draw CSV."""
 
@@ -89,6 +116,7 @@ def recompute_control_metrics_from_frame(frame: pd.DataFrame) -> Dict[str, Any]:
         "correct_original",
         "donor_draw_count",
         "p_y_control_mean",
+        "p_y_control_std",
         "pred_control_majority",
         "correct_control_majority",
         "control_draw_accuracy",
@@ -147,6 +175,7 @@ def recompute_control_metrics_from_frame(frame: pd.DataFrame) -> Dict[str, Any]:
         correct_draws = int((predictions == label).sum())
         majority = int(np.bincount(predictions, minlength=2).argmax())
         probability_mean = float(probabilities.mean())
+        probability_std = float(probabilities.std(ddof=0))
         expected_values = {
             "control_correct_draws": correct_draws,
             "pred_control_majority": majority,
@@ -158,6 +187,7 @@ def recompute_control_metrics_from_frame(frame: pd.DataFrame) -> Dict[str, Any]:
         floating = {
             "control_draw_accuracy": float(correct_draws / draw_count),
             "p_y_control_mean": probability_mean,
+            "p_y_control_std": probability_std,
             "control_confidence_drop": float(
                 float(frame.at[index, "p_y_original"]) - probability_mean
             ),
@@ -1316,13 +1346,15 @@ def _score_one_control(
                 majority = int(
                     torch.bincount(predictions, minlength=num_classes).argmax().item()
                 )
-                mean_probability = float(probabilities.mean().item())
+                (
+                    probability_values,
+                    mean_probability,
+                    std_probability,
+                ) = _canonical_probability_draw_statistics(probabilities)
                 row.update(
                     {
                         "p_y_control_mean": mean_probability,
-                        "p_y_control_std": float(
-                            probabilities.std(unbiased=False).item()
-                        ),
+                        "p_y_control_std": std_probability,
                         "pred_control_majority": majority,
                         "correct_control_majority": int(majority == label),
                         "control_draw_accuracy": correct_draws / donor_samples,
@@ -1331,7 +1363,7 @@ def _score_one_control(
                             row["p_y_original"] - mean_probability
                         ),
                         "p_y_control_draws": json.dumps(
-                            [float(value) for value in probabilities.cpu().tolist()],
+                            probability_values,
                             separators=(",", ":"),
                         ),
                         "pred_control_draws": json.dumps(
@@ -1672,9 +1704,9 @@ def aggregate_control_summaries(
     rows: List[Dict[str, Any]] = []
     missing: List[str] = []
     invalid: List[Dict[str, str]] = []
-    epochs = int(config["training"]["epochs"])
+    selected_epochs = candidate_epochs(config)
     for run in enumerate_sweep_runs(config):
-        for epoch in range(1, epochs + 1):
+        for epoch in selected_epochs:
             candidate_id = run.candidate_id(epoch)
             summary_path = control_score_dir / f"{candidate_id}_controls_summary.json"
             if not summary_path.is_file():
