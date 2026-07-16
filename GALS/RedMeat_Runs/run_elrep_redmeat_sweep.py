@@ -1,0 +1,344 @@
+#!/usr/bin/env python3
+import argparse
+import csv
+import os
+import sys
+import time
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+
+
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+import RedMeat_Runs.run_elrep_redmeat as rer
+
+
+def _loguniform(rng: np.random.Generator, low: float, high: float) -> float:
+    return float(np.exp(rng.uniform(np.log(low), np.log(high))))
+
+
+def _write_row(csv_path: str, row: dict, header: list):
+    file_exists = os.path.exists(csv_path)
+    with open(csv_path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=header)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def _print_runtime_summary(tag: str, rows: list, num_epochs: int):
+    secs = [float(r["seconds"]) for r in rows if r.get("seconds") is not None]
+    if not secs:
+        print(f"[TIME] {tag}: no successful trials to summarize.")
+        return
+    arr = np.array(secs, dtype=float)
+    med_trial_min = float(np.median(arr) / 60.0)
+    med_epoch_min = float(np.median(arr / float(num_epochs)) / 60.0) if num_epochs > 0 else float("nan")
+    total_gpu_hours = float(np.sum(arr) / 3600.0)
+    print(f"[TIME] {tag}: median min/trial={med_trial_min:.4f} | total tuning GPU-hours={total_gpu_hours:.4f}")
+    if num_epochs > 0:
+        print(f"[TIME] {tag}: median min/epoch={med_epoch_min:.4f} (epochs/trial={int(num_epochs)})")
+    else:
+        print(f"[TIME] {tag}: median min/epoch=N/A (num_epochs <= 0)")
+
+
+def _build_run_args(
+    args,
+    seed: int,
+    base_lr: float,
+    classifier_lr: float,
+    theta1: float,
+    theta2: float,
+    weight_decay: float,
+    momentum: float,
+    nesterov: bool,
+):
+    return SimpleNamespace(
+        data_path=args.data_path,
+        seed=seed,
+        model=args.model,
+        clip_model=args.clip_model,
+        tune_mode=args.tune_mode,
+        pretrained=args.pretrained,
+        batch_size=args.batch_size,
+        num_epochs=args.num_epochs,
+        lr=base_lr,
+        base_lr=base_lr,
+        classifier_lr=classifier_lr,
+        theta1=theta1,
+        theta2=theta2,
+        momentum=momentum,
+        weight_decay=weight_decay,
+        nesterov=nesterov,
+        num_workers=args.num_workers,
+        checkpoint_dir=args.checkpoint_dir,
+        classes=args.classes,
+    )
+
+
+def _run_trial(trial_id: int, args, rng: np.random.Generator, sampler_name: str) -> dict:
+    t0 = time.time()
+    if sampler_name == "random":
+        base_lr = _loguniform(rng, args.base_lr_min, args.base_lr_max)
+        classifier_lr = _loguniform(rng, args.cls_lr_min, args.cls_lr_max)
+        if args.momentum_min >= args.momentum_max:
+            momentum = float(args.momentum_min)
+        else:
+            momentum = float(rng.uniform(args.momentum_min, args.momentum_max))
+    else:
+        base_lr = float(args.trial.suggest_float("base_lr", args.base_lr_min, args.base_lr_max, log=True))
+        classifier_lr = float(args.trial.suggest_float("classifier_lr", args.cls_lr_min, args.cls_lr_max, log=True))
+        theta1 = float(args.trial.suggest_float("theta1", args.theta1_min, args.theta1_max, log=True))
+        theta2 = float(args.trial.suggest_float("theta2", args.theta2_min, args.theta2_max, log=True))
+        if args.momentum_min >= args.momentum_max:
+            momentum = float(args.momentum_min)
+        else:
+            momentum = float(args.trial.suggest_float("momentum", args.momentum_min, args.momentum_max))
+    if sampler_name == "random":
+        theta1 = _loguniform(rng, args.theta1_min, args.theta1_max)
+        theta2 = _loguniform(rng, args.theta2_min, args.theta2_max)
+
+    run_args = _build_run_args(
+        args=args,
+        seed=args.train_seed,
+        base_lr=base_lr,
+        classifier_lr=classifier_lr,
+        theta1=theta1,
+        theta2=theta2,
+        weight_decay=args.weight_decay,
+        momentum=momentum,
+        nesterov=args.nesterov,
+    )
+
+    best_balanced_val, test_acc, per_group, worst_group, ckpt = rer.run_single(run_args)
+
+    return {
+        "trial": trial_id,
+        "model": args.model,
+        "clip_model": args.clip_model,
+        "tune_mode": args.tune_mode,
+        "pretrained": int(bool(args.pretrained)),
+        "base_lr": base_lr,
+        "classifier_lr": classifier_lr,
+        "theta1": theta1,
+        "theta2": theta2,
+        "weight_decay": args.weight_decay,
+        "momentum": momentum,
+        "nesterov": args.nesterov,
+        "best_balanced_val_acc": best_balanced_val,
+        "test_acc": test_acc,
+        "per_group": per_group,
+        "worst_group": worst_group,
+        "checkpoint": ckpt,
+        "sampler": sampler_name,
+        "seconds": int(time.time() - t0),
+    }
+
+
+def main():
+    p = argparse.ArgumentParser(description="Optuna/random sweep for ElRep RedMeat ResNet-50.")
+    p.add_argument("data_path", help="RedMeat dataset root containing all_images.csv")
+
+    p.add_argument("--n-trials", type=int, default=50)
+    p.add_argument("--seed", type=int, default=0, help="Sweep sampler seed")
+    p.add_argument("--train-seed", type=int, default=0, help="Fixed training seed during hyperparameter search")
+    p.add_argument("--sampler", choices=["tpe", "random"], default="tpe")
+
+    p.add_argument("--model", choices=["resnet50"], default="resnet50")
+    p.add_argument("--clip-model", default="RN50", help="Unused for ElRep ResNet-50; kept for CSV compatibility.")
+    p.add_argument("--tune-mode", choices=["full", "layer4_head", "last_blocks_head", "linear_probe"], default="full")
+    p.add_argument("--pretrained", action="store_true", default=True)
+    p.add_argument("--no-pretrained", action="store_false", dest="pretrained")
+    p.add_argument("--batch-size", type=int, default=96)
+    p.add_argument("--num-epochs", type=int, default=150)
+    p.add_argument("--num-workers", type=int, default=4)
+    p.add_argument("--checkpoint-dir", default="ElRep_RedMeat_Checkpoints")
+
+    p.add_argument("--base-lr-min", type=float, default=1e-5)
+    p.add_argument("--base-lr-max", type=float, default=5e-2)
+    p.add_argument("--cls-lr-min", type=float, default=1e-5)
+    p.add_argument("--cls-lr-max", type=float, default=5e-2)
+    p.add_argument("--theta1-min", type=float, default=1e-5)
+    p.add_argument("--theta1-max", type=float, default=1e-2)
+    p.add_argument("--theta2-min", type=float, default=1e-6)
+    p.add_argument("--theta2-max", type=float, default=1e-3)
+    p.add_argument("--weight-decay", type=float, default=1e-5)
+    p.add_argument("--momentum", type=float, default=0.9)
+    p.add_argument("--momentum-min", type=float, default=None)
+    p.add_argument("--momentum-max", type=float, default=None)
+    p.add_argument("--nesterov", action="store_true", default=False)
+    p.add_argument("--no-nesterov", action="store_false", dest="nesterov")
+
+    p.add_argument("--output-csv", default="elrep_redmeat_sweep.csv")
+
+    p.add_argument("--post-seeds", type=int, default=5)
+    p.add_argument("--post-seed-start", type=int, default=0)
+    p.add_argument("--post-output-csv", default="elrep_redmeat_best5.csv")
+    p.add_argument(
+        "--classes",
+        default="prime_rib,pork_chop,steak,baby_back_ribs,filet_mignon",
+        help="Comma-separated class list; empty to infer from all_images.csv.",
+    )
+
+    args = p.parse_args()
+
+    # Backward compatible behavior: if no momentum range is provided, keep momentum fixed.
+    if args.momentum_min is None:
+        args.momentum_min = float(args.momentum)
+    if args.momentum_max is None:
+        args.momentum_max = float(args.momentum)
+
+    header = [
+        "trial",
+        "model",
+        "clip_model",
+        "tune_mode",
+        "pretrained",
+        "base_lr",
+        "classifier_lr",
+        "theta1",
+        "theta2",
+        "weight_decay",
+        "momentum",
+        "nesterov",
+        "best_balanced_val_acc",
+        "test_acc",
+        "per_group",
+        "worst_group",
+        "checkpoint",
+        "sampler",
+        "seconds",
+    ]
+
+    rng = np.random.default_rng(args.seed)
+
+    if args.sampler == "tpe":
+        try:
+            import optuna  # noqa: F401
+        except Exception as exc:
+            print(f"[SWEEP] Optuna not available ({exc}); falling back to random search.")
+            args.sampler = "random"
+
+    best_row = None
+    sweep_rows = []
+
+    if args.sampler == "random":
+        for trial_id in range(args.n_trials):
+            row = _run_trial(trial_id, args, rng, "random")
+            _write_row(args.output_csv, row, header)
+            sweep_rows.append(row)
+            if best_row is None or row["best_balanced_val_acc"] > best_row["best_balanced_val_acc"]:
+                best_row = row
+            print(f"[SWEEP] Trial {trial_id} done. best_balanced_val_acc={row['best_balanced_val_acc']:.4f}")
+    else:
+        import optuna
+
+        sampler = optuna.samplers.TPESampler(seed=args.seed)
+        study = optuna.create_study(direction="maximize", sampler=sampler)
+
+        def objective(trial):
+            nonlocal best_row
+            args.trial = trial
+            row = _run_trial(trial.number, args, rng, "tpe")
+            _write_row(args.output_csv, row, header)
+            sweep_rows.append(row)
+            if best_row is None or row["best_balanced_val_acc"] > best_row["best_balanced_val_acc"]:
+                best_row = row
+            print(f"[SWEEP] Trial {trial.number} done. best_balanced_val_acc={row['best_balanced_val_acc']:.4f}")
+            return row["best_balanced_val_acc"]
+
+        study.optimize(objective, n_trials=args.n_trials)
+
+    if best_row is None:
+        raise SystemExit("No trials completed")
+
+    print("[SWEEP] Best trial:")
+    for k in header:
+        print(f"  {k}: {best_row[k]}")
+
+    post_header = [
+        "phase",
+        "seed",
+        "model",
+        "clip_model",
+        "tune_mode",
+        "pretrained",
+        "base_lr",
+        "classifier_lr",
+        "theta1",
+        "theta2",
+        "weight_decay",
+        "momentum",
+        "nesterov",
+        "best_balanced_val_acc",
+        "test_acc",
+        "per_group",
+        "worst_group",
+        "checkpoint",
+        "seconds",
+    ]
+
+    best_base_lr = float(best_row["base_lr"])
+    best_classifier_lr = float(best_row["classifier_lr"])
+    best_theta1 = float(best_row["theta1"])
+    best_theta2 = float(best_row["theta2"])
+    best_wd = float(best_row["weight_decay"])
+    best_momentum = float(best_row["momentum"])
+    best_nesterov = str(best_row["nesterov"]).lower() in ("1", "true", "yes")
+
+    print(f"[POST] Running best hyperparameters on {args.post_seeds} seeds...")
+    post_rows = []
+    for i in range(args.post_seeds):
+        seed = args.post_seed_start + i
+        run_args = _build_run_args(
+            args=args,
+            seed=seed,
+            base_lr=best_base_lr,
+            classifier_lr=best_classifier_lr,
+            theta1=best_theta1,
+            theta2=best_theta2,
+            weight_decay=best_wd,
+            momentum=best_momentum,
+            nesterov=best_nesterov,
+        )
+        t0 = time.time()
+        best_balanced_val, test_acc, per_group, worst_group, ckpt = rer.run_single(run_args)
+        row = {
+            "phase": "best5",
+            "seed": seed,
+            "model": args.model,
+            "clip_model": args.clip_model,
+            "tune_mode": args.tune_mode,
+            "pretrained": int(bool(args.pretrained)),
+            "base_lr": best_base_lr,
+            "classifier_lr": best_classifier_lr,
+            "theta1": best_theta1,
+            "theta2": best_theta2,
+            "weight_decay": best_wd,
+            "momentum": best_momentum,
+            "nesterov": best_nesterov,
+            "best_balanced_val_acc": best_balanced_val,
+            "test_acc": test_acc,
+            "per_group": per_group,
+            "worst_group": worst_group,
+            "checkpoint": ckpt,
+            "seconds": int(time.time() - t0),
+        }
+        _write_row(args.post_output_csv, row, post_header)
+        post_rows.append(row)
+        print(
+            f"[POST] seed={seed} best_balanced_val_acc={best_balanced_val:.4f} test_acc={test_acc:.2f}%",
+            flush=True,
+        )
+
+    _print_runtime_summary("sweep", sweep_rows, args.num_epochs)
+    if post_rows:
+        _print_runtime_summary("post_best_seeds", post_rows, args.num_epochs)
+
+
+if __name__ == "__main__":
+    main()

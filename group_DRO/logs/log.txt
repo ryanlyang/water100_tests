@@ -1,0 +1,52 @@
+Dataset: CUB
+Shift type: confounder
+Target name: waterbird_complete95
+Confounder names: ['forest2water2']
+Resume: False
+Minority fraction: None
+Imbalance ratio: None
+Fraction: 1.0
+Root dir: /home/ryan/ComputerScience/LearnToLook/SwitchVLM/group_DRO
+Reweight groups: True
+Augment data: False
+Val fraction: 0.1
+Robust: True
+Alpha: 0.2
+Generalization adjustment: 0
+Automatic adjustment: False
+Robust step size: 0.01
+Use normalized loss: False
+Btl: False
+Hinge: False
+Model: resnet50
+Train from scratch: False
+N epochs: 300
+Batch size: 128
+Lr: 0.001
+Scheduler: False
+Weight decay: 0.0001
+Gamma: 0.1
+Minimum variational weight: 0
+Seed: 0
+Show progress: False
+Log dir: ./logs
+Log every: 50
+Save step: 10
+Save best: False
+Save last: False
+
+Training Data...
+    waterbird_complete95 = 0, forest2water2 = 0: n = 3498
+    waterbird_complete95 = 0, forest2water2 = 1: n = 184
+    waterbird_complete95 = 1, forest2water2 = 0: n = 56
+    waterbird_complete95 = 1, forest2water2 = 1: n = 1057
+Validation Data...
+    waterbird_complete95 = 0, forest2water2 = 0: n = 467
+    waterbird_complete95 = 0, forest2water2 = 1: n = 466
+    waterbird_complete95 = 1, forest2water2 = 0: n = 133
+    waterbird_complete95 = 1, forest2water2 = 1: n = 133
+Test Data...
+    waterbird_complete95 = 0, forest2water2 = 0: n = 2255
+    waterbird_complete95 = 0, forest2water2 = 1: n = 2255
+    waterbird_complete95 = 1, forest2water2 = 0: n = 642
+    waterbird_complete95 = 1, forest2water2 = 1: n = 642

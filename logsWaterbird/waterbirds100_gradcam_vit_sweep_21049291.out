@@ -1,0 +1,88 @@
+[SWEEP] run_name_prefix=gradcam_waterbird_1.0_forest2water2_21049291
+[SWEEP] Trial 0 done. best_balanced_val_acc=0.6905029097263414
+[SWEEP] Trial 1 done. best_balanced_val_acc=0.7023442134119948
+[SWEEP] Trial 2 done. best_balanced_val_acc=0.6801304968177373
+[SWEEP] Trial 3 done. best_balanced_val_acc=0.8262981547685846
+[SWEEP] Trial 4 done. best_balanced_val_acc=0.6687941869599372
+[SWEEP] Trial 5 done. best_balanced_val_acc=0.6600329448354362
+[SWEEP] Trial 6 done. best_balanced_val_acc=0.6733471471856614
+[SWEEP] Trial 7 done. best_balanced_val_acc=0.712412026868878
+[SWEEP] Trial 8 done. best_balanced_val_acc=0.6528247591259599
+[SWEEP] Trial 9 done. best_balanced_val_acc=0.7368621447007712
+[SWEEP] Trial 10 done. best_balanced_val_acc=0.8208995302755824
+[SWEEP] Trial 11 done. best_balanced_val_acc=0.8126172307100373
+[SWEEP] Trial 12 done. best_balanced_val_acc=0.8235567597030957
+[SWEEP] Trial 13 done. best_balanced_val_acc=0.8207291950558699
+[SWEEP] Trial 14 done. best_balanced_val_acc=0.7136564759446591
+[SWEEP] Trial 15 done. best_balanced_val_acc=0.6372481042692018
+[SWEEP] Trial 16 done. best_balanced_val_acc=0.8312739471279478
+[SWEEP] Trial 17 done. best_balanced_val_acc=0.7552623563172323
+[SWEEP] Trial 18 done. best_balanced_val_acc=0.6841163409590073
+[SWEEP] Trial 19 done. best_balanced_val_acc=0.771289898520288
+[SWEEP] Trial 20 done. best_balanced_val_acc=0.6717640316142168
+[SWEEP] Trial 21 done. best_balanced_val_acc=0.8246589287718229
+[SWEEP] Trial 22 done. best_balanced_val_acc=0.8396684675441268
+[SWEEP] Trial 23 done. best_balanced_val_acc=0.7297661798419289
+[SWEEP] Trial 24 done. best_balanced_val_acc=0.7503687256520832
+[SWEEP] Trial 25 done. best_balanced_val_acc=0.7203536559949981
+[SWEEP] Trial 26 done. best_balanced_val_acc=0.7347700274139506
+[SWEEP] Trial 27 done. best_balanced_val_acc=0.8248573192041939
+[SWEEP] Trial 28 done. best_balanced_val_acc=0.6885771197717108
+[SWEEP] Trial 29 done. best_balanced_val_acc=0.710770796928355
+[SWEEP] Trial 30 done. best_balanced_val_acc=0.7024043317248345
+[SWEEP] Trial 31 done. best_balanced_val_acc=0.8073869374929862
+[SWEEP] Trial 32 done. best_balanced_val_acc=0.8220858649822851
+[SWEEP] Trial 33 done. best_balanced_val_acc=0.7739210766789041
+[SWEEP] Trial 34 done. best_balanced_val_acc=0.7691717299645703
+[SWEEP] Trial 35 done. best_balanced_val_acc=0.7426555461147538
+[SWEEP] Trial 36 done. best_balanced_val_acc=0.6939236417269186
+[SWEEP] Trial 37 done. best_balanced_val_acc=0.7479720089135418
+[SWEEP] Trial 38 done. best_balanced_val_acc=0.6941240361030507
+[SWEEP] Trial 39 done. best_balanced_val_acc=0.6881883546820142
+[SWEEP] Trial 40 done. best_balanced_val_acc=0.7471784471840581
+[SWEEP] Trial 41 done. best_balanced_val_acc=0.8225107010596855
+[SWEEP] Trial 42 done. best_balanced_val_acc=0.8120801737820029
+[SWEEP] Trial 43 done. best_balanced_val_acc=0.8266368212642481
+[SWEEP] Trial 44 done. best_balanced_val_acc=0.7632340445997723
+[SWEEP] Trial 45 done. best_balanced_val_acc=0.8015915321352421
+[SWEEP] Trial 46 done. best_balanced_val_acc=0.5120156467928884
+[SWEEP] Trial 47 done. best_balanced_val_acc=0.695735206887154
+[SWEEP] Trial 48 done. best_balanced_val_acc=0.7677248825688956
+[SWEEP] Trial 49 done. best_balanced_val_acc=0.7970986902223576
+[SWEEP] Best trial:
+  trial: 22
+  name: gradcam_waterbird_1.0_forest2water2_21049291_trial_022
+  method: gradcam
+  seed: 0
+  base_lr: 5.0603557918093155e-06
+  classifier_lr: 0.008659804735977593
+  grad_weight: None
+  cam_weight: 29.677302557935892
+  abn_cls_weight: None
+  abn_att_weight: None
+  weight_decay: 7.200568514331509e-06
+  best_balanced_val_acc: 0.8396684675441268
+  test_acc: 85.69209527096997
+  balanced_test_acc: 82.42515766279158
+  per_group: 82.42515766279158
+  worst_group: 67.44548286604362
+  checkpoint: trained_weights/waterbirds/gradcam_waterbird_1.0_forest2water2_21049291_trial_022/best_balanced_valacc_0.84_epoch_0.ckpt
+  log_path: /home/ryreu/guided_cnn/logsWaterbird/gradcam100_vit_sweep_logs_21049291/gradcam_waterbird_1.0_forest2water2_21049291_trial_022.log
+  seconds: 3073
+  sampler: tpe
+  run_dir: trained_weights/waterbirds/gradcam_waterbird_1.0_forest2water2_21049291_trial_022
+[POST] Rerunning best hyperparameters for 5 seeds: [0, 1, 2, 3, 4]
+[POST] seed=0 best_balanced_val_acc=0.8396684675441268 per_group=82.42515766279158 worst_group=67.44548286604362
+[POST] seed=1 best_balanced_val_acc=0.8135771197717108 per_group=80.6927837757562 worst_group=57.63239875389408
+[POST] seed=2 best_balanced_val_acc=0.7767446334386072 per_group=76.37796934468919 worst_group=42.99065420560748
+[POST] seed=3 best_balanced_val_acc=0.7759811308655433 per_group=77.58734484116295 worst_group=53.426791277258566
+[POST] seed=4 best_balanced_val_acc=0.7773398047357198 per_group=78.86280746834656 worst_group=58.09968847352025
+[POST] Summary over seeds:
+  per_group: 79.19 +/- 2.16
+  worst_group: 55.92 +/- 7.92
+  balanced_test_acc: 79.19 +/- 2.16
+[POST] Wrote: /home/ryreu/guided_cnn/logsWaterbird/gradcam100_vit_sweep_21049291_best_seeds.csv
+[TIME] sweep: median min/trial=52.11 | total tuning GPU-hours=43.48
+[TIME] sweep: median min/epoch=0.2605 (epochs/trial=200)
+[TIME] post_best_seeds: median min/trial=52.75 | total tuning GPU-hours=4.42
+[TIME] post_best_seeds: median min/epoch=0.2637 (epochs/trial=200)

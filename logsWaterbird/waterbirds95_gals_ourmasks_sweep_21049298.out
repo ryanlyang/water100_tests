@@ -1,0 +1,7 @@
+[Tue Feb 17 01:57:38 PM EST 2026] Host: skl-a-55.rc.rit.edu
+Repo: /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+Data: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+MASK_DIR: /home/ryreu/guided_cnn/waterbirds/LearningToLook/code/WeCLIPPlus/results/val/prediction_cmap
+Trials: 50 (sampler=tpe sweep_seed=0 train_seed=0 keep=best)
+/home/ryreu/miniconda3/envs/gals_a100/bin/python
+[SWEEP] run_name_prefix=gals_waterbird_complete95_forest2water2_21049298

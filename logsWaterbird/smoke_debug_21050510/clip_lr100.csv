@@ -1,0 +1,2 @@
+trial,clip_model,C,penalty,solver,l1_ratio,fit_intercept,val_acc,val_avg_group_acc,val_worst_group_acc,val_group_accs,test_acc,test_avg_group_acc,test_worst_group_acc,test_group_accs,sampler,seconds
+0,RN50,1.0,l2,lbfgs,,True,67.13928273561301,65.03895963901937,28.35820895522388,"[99.78,37.98,28.36,94.03]",65.77493959268207,63.25272326640004,23.98753894080997,"[99.69,35.88,23.99,93.46]",random,0

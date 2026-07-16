@@ -1,0 +1,47 @@
+# ================================================================
+# Installing Dependencies
+# ================================================================
+# We recommend using conda to create an isolated environment.
+#
+# --- Conda (recommended) ---
+# Create a clean environment with Python 3.8
+#   conda create -n learntolook python=3.8
+#   conda activate learntolook
+#
+# Install pydensecrf separately from conda-forge (avoid pip build issues)
+#   conda install -y -c conda-forge pydensecrf
+#
+# Install torch/torchvision for your CUDA first (recommended), then install all remaining deps
+#   # Example (adjust for your CUDA/GPU): pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision
+#   # On RTX 5090, use a torch build with sm_120 support.
+#   pip install -r requirements_weclip.txt
+#
+# --- pip only (alternative) ---
+# If you prefer not to use conda, you can install directly with pip.
+# On Linux, you may need extra system libraries:
+#
+#   sudo apt-get update && sudo apt-get install -y \
+#       build-essential cmake libeigen3-dev python3-dev
+#
+# Then install Python dependencies (note: pydensecrf is intentionally excluded):
+#   pip install -r requirements_weclip.txt
+# ================================================================
+
+mmcv_full==1.2.7
+matplotlib==3.3.3
+tqdm==4.46.1
+omegaconf==2.0.0
+numpy==1.23.5
+timm>=0.9,<1.1
+imageio>=2.31.0
+mmcv==1.3.17
+Pillow==8.4.0
+scikit_learn==1.0.1
+tensorboard
+ftfy>=6.1.1
+regex>=2023.8.8
+ttach>=0.0.3
+lxml>=4.9.0
+tensorflow
+colour
+open_clip_torch

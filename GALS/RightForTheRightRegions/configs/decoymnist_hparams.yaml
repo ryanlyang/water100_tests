@@ -1,0 +1,46 @@
+# Reference hyperparameter list for DecoyMNIST (not fully DecoyMNIST-optimized).
+# Shared training setup across methods: epochs=19, learning_rate=0.001.
+
+decoymnist_hparams:
+  shared_training:
+    epochs: 19
+    learning_rate: 0.001
+
+  vanilla:
+    best_value: 0.7453688859675842
+    momentum: 0.8914661939990524
+
+  abn:
+    best_value: 0.7318302419160909
+    abn_cls_weight: 3.2547104257357056
+
+  upweight:
+    best_value: 0.7101535822498677
+
+  clip_lr:
+    c: 0.2515000498909345
+
+  afr:
+    gamma: 4.0
+    reg: 0.0
+    best_val_wga: 0.3476
+    best_test_at_val: 0.3326
+    best_test_groups:
+      - 0.9965
+      - 0.3326
+      - 0.3801
+      - 0.9751
+
+  elrep:
+    theta1: 4.1741182912970346e-05
+    theta2: 2.5433427234421545e-06
+
+  gals_rrr_vit_maps:
+    best_value: 0.7392087628452795
+    grad_weight: 97631.97904483072
+    grad_criterion: L1
+
+  r4rr_optimized:
+    attention_epoch: 73
+    kl_lambda: 495.61
+    lr2_mult: 0.123

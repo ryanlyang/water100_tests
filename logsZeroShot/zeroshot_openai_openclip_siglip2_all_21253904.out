@@ -1,0 +1,93 @@
+[Sun May  3 02:03:05 AM EDT 2026] Host: skl-a-26.rc.rit.edu
+Repo: /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+WB95: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+WB100: /home/ryreu/guided_cnn/waterbirds/waterbird_1.0_forest2water2
+RedMeat: /home/ryreu/guided_cnn/Food101/data/food-101-redmeat
+Decoy: /home/ryreu/guided_cnn/MNIST_AGAIN/MakeMNIST/data/DecoyMNIST_png
+Variants: openai_vit,openclip_laion,siglip2
+OpenAI CLIP: model=ViT-B/32
+LAION: model=ViT-B-32 pretrained=laion2b_s34b_b79k
+SigLIP2: model=ViT-B-16-SigLIP2-256 pretrained=webli
+Seeds: 0
+Output CSV: /home/ryreu/guided_cnn/logsZeroShot/zeroshot_openai_openclip_siglip2_all_21253904.csv
+/home/ryreu/miniconda3/envs/gals_a100/bin/python
+
+[MODEL] variant=openai_vit seed=0 model=ViT-B/32 pretrained=openai device=cuda
+[RESULT] decoymnist acc=16.9600 worst_class=0.0000
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 4510
+NUMBER OF SAMPLES WITH LABEL Waterbird: 1284
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 2255
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 2255
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 642
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 642
+[RESULT] waterbirds95 acc=70.3314 bal_group=76.0400 worst_group=44.3902
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_1.0_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 4510
+NUMBER OF SAMPLES WITH LABEL Waterbird: 1284
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 2255
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 2255
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 642
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 642
+[RESULT] waterbirds100 acc=70.6075 bal_group=76.1338 worst_group=45.0554
+[RESULT] redmeat acc=67.2800 worst_class=28.8000
+
+[MODEL] variant=openclip_laion seed=0 model=ViT-B-32 pretrained=laion2b_s34b_b79k device=cuda
+[RESULT] decoymnist acc=65.2300 worst_class=28.6422
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 4510
+NUMBER OF SAMPLES WITH LABEL Waterbird: 1284
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 2255
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 2255
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 642
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 642
+[RESULT] waterbirds95 acc=60.5799 bal_group=67.3528 worst_group=27.0953
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_1.0_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 4510
+NUMBER OF SAMPLES WITH LABEL Waterbird: 1284
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 2255
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 2255
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 642
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 642
+[RESULT] waterbirds100 acc=61.4084 bal_group=68.3028 worst_group=27.3171
+[RESULT] redmeat acc=73.8400 worst_class=54.0000
+
+[MODEL] variant=siglip2 seed=0 model=ViT-B-16-SigLIP2-256 pretrained=webli device=cuda
+[RESULT] decoymnist acc=79.1200 worst_class=58.2755
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 4510
+NUMBER OF SAMPLES WITH LABEL Waterbird: 1284
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 2255
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 2255
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 642
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 642
+[RESULT] waterbirds95 acc=79.9620 bal_group=74.7613 worst_group=53.5826
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_1.0_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 4510
+NUMBER OF SAMPLES WITH LABEL Waterbird: 1284
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 2255
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 2255
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 642
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 642
+[RESULT] waterbirds100 acc=80.4798 bal_group=74.8989 worst_group=51.7134
+[RESULT] redmeat acc=84.5600 worst_class=77.6000
+
+[DONE] wrote /home/ryreu/guided_cnn/logsZeroShot/zeroshot_openai_openclip_siglip2_all_21253904.csv
+
+[SUMMARY] by dataset + variant
+  decoymnist | openai_vit acc=16.9600 +/- 0.0000
+  decoymnist | openclip_laion acc=65.2300 +/- 0.0000
+  decoymnist | siglip2 acc=79.1200 +/- 0.0000
+  redmeat | openai_vit acc=67.2800 +/- 0.0000
+  redmeat | openclip_laion acc=73.8400 +/- 0.0000
+  redmeat | siglip2 acc=84.5600 +/- 0.0000
+  waterbirds100 | openai_vit acc=70.6075 +/- 0.0000
+  waterbirds100 | openclip_laion acc=61.4084 +/- 0.0000
+  waterbirds100 | siglip2 acc=80.4798 +/- 0.0000
+  waterbirds95 | openai_vit acc=70.3314 +/- 0.0000
+  waterbirds95 | openclip_laion acc=60.5799 +/- 0.0000
+  waterbirds95 | siglip2 acc=79.9620 +/- 0.0000
+[TIME] seconds=303
+
+[DONE] Zero-shot run completed.
+CSV: /home/ryreu/guided_cnn/logsZeroShot/zeroshot_openai_openclip_siglip2_all_21253904.csv

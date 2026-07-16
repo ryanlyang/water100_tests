@@ -1,0 +1,26 @@
+[SWEEP] run_name_prefix=abn_att_waterbird_complete95_forest2water2_21050491
+[SWEEP] Trial 0 done. best_balanced_val_acc=0.5152954734102136
+[SWEEP] Best trial:
+  trial: 0
+  name: abn_att_waterbird_complete95_forest2water2_21050491_trial_000
+  method: abn_att
+  seed: 0
+  base_lr: 0.0010000000000000002
+  classifier_lr: 9.999999999999991e-05
+  grad_weight: None
+  cam_weight: None
+  abn_cls_weight: None
+  abn_att_weight: 1.0
+  weight_decay: 9.999999999999997e-06
+  best_balanced_val_acc: 0.5152954734102136
+  test_acc: 67.05212288574387
+  balanced_test_acc: 53.739163920951015
+  per_group: 53.739163920951015
+  worst_group: 1.557632398753894
+  checkpoint: trained_weights/waterbirds/abn_att_waterbird_complete95_forest2water2_21050491_trial_000/best_balanced_valacc_0.52_epoch_0.ckpt
+  log_path: /home/ryreu/guided_cnn/logsWaterbird/smoke_debug_21050491/abn95_vit_logs/abn_att_waterbird_complete95_forest2water2_21050491_trial_000.log
+  seconds: 143
+  sampler: random
+  run_dir: trained_weights/waterbirds/abn_att_waterbird_complete95_forest2water2_21050491_trial_000
+[TIME] sweep: median min/trial=2.38 | total tuning GPU-hours=0.04
+[TIME] sweep: median min/epoch=0.0119 (epochs/trial=200)

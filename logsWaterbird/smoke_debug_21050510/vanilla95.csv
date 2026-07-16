@@ -1,0 +1,2 @@
+trial,lr,weight_decay,momentum,nesterov,best_balanced_val_acc,test_acc,per_group,worst_group,checkpoint,sampler,seconds
+0,0.0010000000000000002,9.999999999999997e-06,0.9,False,0.6698941888483265,75.3538142906455,65.89607034558026,12.149532710280374,NONE,random,22

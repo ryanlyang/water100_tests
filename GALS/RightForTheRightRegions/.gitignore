@@ -1,0 +1,106 @@
+# ------------------------------
+# OS / editor
+# ------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# ------------------------------
+# Python caches / build artifacts
+# ------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.nox/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# ------------------------------
+# Environments
+# ------------------------------
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ------------------------------
+# Jupyter
+# ------------------------------
+.ipynb_checkpoints/
+
+# ------------------------------
+# Local compatibility symlink/folder
+# (optional symlink used by map-generation scripts)
+# ------------------------------
+code/
+
+# ------------------------------
+# Logs / runtime outputs
+# ------------------------------
+logs/
+**/logs/
+*.log
+nohup.out
+slurm-*.out
+slurm-*.err
+
+# ------------------------------
+# Experiment tracking outputs
+# ------------------------------
+wandb/
+runs/
+mlruns/
+tensorboard/
+
+# ------------------------------
+# Training artifacts
+# ------------------------------
+**/trained_weights/
+**/checkpoints/
+**/ckpts/
+**/results/
+**/results_*/
+
+# Model files
+*.ckpt
+*.pth
+*.pt
+*.onnx
+
+# ------------------------------
+# Dataset artifacts (keep scripts, ignore downloaded/generated data)
+# ------------------------------
+data/waterbird_complete95_forest2water2/
+data/waterbird_1.0_forest2water2/
+data/food-101*/
+data/DecoyMNIST_png/
+repro_runs/third_party/CDEP/data/
+repro_runs/third_party/group_DRO/logs/
+
+# ------------------------------
+# Generated map folders
+# ------------------------------
+**/prediction_cmap/
+**/clip_rn50_attention_gradcam/
+**/clip_vit_attention/
+**/mask_bank/
+
+# ------------------------------
+# Misc
+# ------------------------------
+.cache/
+*.tmp
+*.bak

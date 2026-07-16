@@ -1,0 +1,56 @@
+[I 2026-02-14 13:43:31,718] A new study created in memory with name: no-name-cbf8f9ae-d225-49af-8301-427e47fdb495
+[I 2026-02-14 17:04:01,055] Trial 0 finished with value: 0.6423661766356189 and parameters: {'base_lr': 4.27249758714384e-06, 'classifier_lr': 0.0004067315197936404, 'weight_decay': 2.8865493165838586e-05, 'grad_weight': 690.9865690843071}. Best is trial 0 with value: 0.6423661766356189.
+[I 2026-02-14 20:23:54,160] Trial 1 finished with value: 0.6803008320374497 and parameters: {'base_lr': 3.4505688189200636e-05, 'classifier_lr': 0.0007245782557393209, 'weight_decay': 0.00022654786897805622, 'grad_weight': 77770.24991058343}. Best is trial 1 with value: 0.6803008320374497.
+[I 2026-02-14 23:43:21,383] Trial 2 finished with value: 0.5942835500264521 and parameters: {'base_lr': 1.2846832039305418e-05, 'classifier_lr': 2.162167397095996e-05, 'weight_decay': 4.816614119242147e-05, 'grad_weight': 35.215506329237776}. Best is trial 1 with value: 0.6803008320374497.
+[I 2026-02-15 03:01:59,976] Trial 3 finished with value: 0.5912255318466743 and parameters: {'base_lr': 3.7373387541474112e-06, 'classifier_lr': 1.055226413164994e-05, 'weight_decay': 0.0004488097074470207, 'grad_weight': 24.372146542222342}. Best is trial 1 with value: 0.6803008320374497.
+[I 2026-02-15 06:21:31,725] Trial 4 finished with value: 0.6335468201420396 and parameters: {'base_lr': 5.171445547345483e-06, 'classifier_lr': 0.00014682633769115986, 'weight_decay': 0.0002285956670685321, 'grad_weight': 6.840089567711511}. Best is trial 1 with value: 0.6803008320374497.
+[I 2026-02-15 09:40:44,738] Trial 5 finished with value: 0.674818041906472 and parameters: {'base_lr': 0.0008672283230568088, 'classifier_lr': 0.002926626261558265, 'weight_decay': 2.1647295937437948e-06, 'grad_weight': 21700.70294523559}. Best is trial 1 with value: 0.6803008320374497.
+[I 2026-02-15 12:59:30,139] Trial 6 finished with value: 0.6474261346329576 and parameters: {'base_lr': 2.063748841930143e-06, 'classifier_lr': 0.0004117717843753471, 'weight_decay': 0.00021638477545690615, 'grad_weight': 64570.36137268083}. Best is trial 1 with value: 0.6803008320374497.
+[I 2026-02-15 16:19:03,017] Trial 7 finished with value: 0.6369675521426167 and parameters: {'base_lr': 3.149553395084726e-05, 'classifier_lr': 0.00010836606048952598, 'weight_decay': 3.494680731604851e-05, 'grad_weight': 27.861005906120248}. Best is trial 1 with value: 0.6803008320374497.
+[I 2026-02-15 19:39:10,923] Trial 8 finished with value: 0.6459011334305914 and parameters: {'base_lr': 0.0001938443843540114, 'classifier_lr': 3.898100615378092e-05, 'weight_decay': 4.8375909715649216e-05, 'grad_weight': 2.0591220080895836}. Best is trial 1 with value: 0.6803008320374497.
+[I 2026-02-15 22:57:53,362] Trial 9 finished with value: 0.6748460971191305 and parameters: {'base_lr': 0.00030936592972300705, 'classifier_lr': 8.646813620700375e-05, 'weight_decay': 6.28085899858509e-05, 'grad_weight': 40210.46978213453}. Best is trial 1 with value: 0.6803008320374497.
+[I 2026-02-16 02:17:25,827] Trial 10 finished with value: 0.6605138913381534 and parameters: {'base_lr': 9.521838490656986e-05, 'classifier_lr': 0.008552571394328808, 'weight_decay': 5.979546523844757e-06, 'grad_weight': 2174.304301583544}. Best is trial 1 with value: 0.6803008320374497.
+[I 2026-02-16 05:36:58,041] Trial 11 finished with value: 0.6643875146287894 and parameters: {'base_lr': 0.0007054748161275962, 'classifier_lr': 0.0011928907924873397, 'weight_decay': 0.0007840685068559273, 'grad_weight': 8264.565635592424}. Best is trial 1 with value: 0.6803008320374497.
+[I 2026-02-16 08:56:08,745] Trial 12 finished with value: 0.6877635186046138 and parameters: {'base_lr': 0.0001476436197604416, 'classifier_lr': 0.0009614579925347241, 'weight_decay': 0.0001206203016790274, 'grad_weight': 94077.98484839514}. Best is trial 12 with value: 0.6877635186046138.
+[I 2026-02-16 12:15:30,180] Trial 13 finished with value: 0.6618144508392516 and parameters: {'base_lr': 5.128622268627456e-05, 'classifier_lr': 0.0012120261695088813, 'weight_decay': 0.00015967048053824797, 'grad_weight': 6090.130700332295}. Best is trial 12 with value: 0.6877635186046138.
+[I 2026-02-16 15:35:30,822] Trial 14 finished with value: 0.6805833881077961 and parameters: {'base_lr': 2.1167439066592744e-05, 'classifier_lr': 0.0011315682955743431, 'weight_decay': 9.044838134385305e-06, 'grad_weight': 92942.9161033908}. Best is trial 12 with value: 0.6877635186046138.
+[I 2026-02-16 18:55:21,718] Trial 15 finished with value: 0.6631430655530084 and parameters: {'base_lr': 1.4063761929470899e-05, 'classifier_lr': 0.0035114240087620145, 'weight_decay': 1.0335168482013275e-05, 'grad_weight': 226.16987632425187}. Best is trial 12 with value: 0.6877635186046138.
+[I 2026-02-16 22:15:28,081] Trial 16 finished with value: 0.6677220770476298 and parameters: {'base_lr': 0.00010948423502522767, 'classifier_lr': 0.0027456209671029436, 'weight_decay': 8.609282558413804e-06, 'grad_weight': 10631.592682323217}. Best is trial 12 with value: 0.6877635186046138.
+[I 2026-02-17 01:36:22,453] Trial 17 finished with value: 0.6406988954261987 and parameters: {'base_lr': 1.491586504338157e-05, 'classifier_lr': 0.00023428941000871423, 'weight_decay': 1.7290313612797498e-06, 'grad_weight': 1898.4520528229916}. Best is trial 12 with value: 0.6877635186046138.
+[I 2026-02-17 04:55:57,364] Trial 18 finished with value: 0.6670727992689613 and parameters: {'base_lr': 1.0308910042901204e-06, 'classifier_lr': 0.008739422057281027, 'weight_decay': 2.0076250567795007e-05, 'grad_weight': 232.97060427289307}. Best is trial 12 with value: 0.6877635186046138.
+[I 2026-02-17 08:15:41,941] Trial 19 finished with value: 0.691240361030508 and parameters: {'base_lr': 0.0002818559831076274, 'classifier_lr': 0.0010873107440527222, 'weight_decay': 4.379634598816908e-06, 'grad_weight': 90081.70438258191}. Best is trial 19 with value: 0.691240361030508.
+[W 2026-02-17 11:10:31,778] Trial 20 failed with parameters: {'base_lr': 0.00030661744084434765, 'classifier_lr': 0.0006700376461979736, 'weight_decay': 3.2884736648321456e-06, 'grad_weight': 19169.622505108407} because of the following error: BlockingIOError(11, 'write could not complete without blocking', 0).
+Traceback (most recent call last):
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/optuna/study/_optimize.py", line 201, in _run_trial
+    value_or_values = func(trial)
+  File "run_gals_sweep.py", line 547, in objective
+    row = run_and_record(
+  File "run_gals_sweep.py", line 434, in run_and_record
+    row = run_one_trial(
+  File "run_gals_sweep.py", line 186, in run_one_trial
+    lf.flush()
+BlockingIOError: [Errno 11] write could not complete without blocking
+[W 2026-02-17 11:10:31,797] Trial 20 failed with value None.
+Traceback (most recent call last):
+  File "run_gals_sweep.py", line 700, in <module>
+    main()
+  File "run_gals_sweep.py", line 570, in main
+    study.optimize(objective, n_trials=args.n_trials, catch=(RuntimeError,), callbacks=callbacks)
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/optuna/study/study.py", line 490, in optimize
+    _optimize(
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/optuna/study/_optimize.py", line 63, in _optimize
+    _optimize_sequential(
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/optuna/study/_optimize.py", line 160, in _optimize_sequential
+    frozen_trial_id = _run_trial(study, func, catch)
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/optuna/study/_optimize.py", line 258, in _run_trial
+    raise func_err
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/optuna/study/_optimize.py", line 201, in _run_trial
+    value_or_values = func(trial)
+  File "run_gals_sweep.py", line 547, in objective
+    row = run_and_record(
+  File "run_gals_sweep.py", line 434, in run_and_record
+    row = run_one_trial(
+  File "run_gals_sweep.py", line 186, in run_one_trial
+    lf.flush()
+BlockingIOError: [Errno 11] write could not complete without blocking
+srun: error: skl-a-43: task 0: Exited with exit code 1

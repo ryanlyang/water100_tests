@@ -1,0 +1,48 @@
+/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torchvision/transforms/transforms.py:332: UserWarning: Argument 'interpolation' of type int is deprecated since 0.13 and will be removed in 0.15. Please use InterpolationMode enum.
+  warnings.warn(
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 3682
+NUMBER OF SAMPLES WITH LABEL Waterbird: 1113
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 3498
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 184
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 56
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 1057
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 933
+NUMBER OF SAMPLES WITH LABEL Waterbird: 266
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 467
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 466
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 133
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 133
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 4510
+NUMBER OF SAMPLES WITH LABEL Waterbird: 1284
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 2255
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 2255
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 642
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 642
+[CLIP-LR] Extracting train features...
+[CLIP-LR] Extracting val features...
+[CLIP-LR] Extracting test features...
+[CLIP-LR] Feature extraction complete. Starting LR sweep...
+[SWEEP] Trial 0 done. val_avg_group_acc=75.0082 (val_worst_group_acc=35.34 test_worst_group_acc=39.72)
+[SWEEP] Best trial:
+  trial: 0
+  clip_model: RN50
+  C: 1.0
+  penalty: l2
+  solver: lbfgs
+  l1_ratio: 
+  fit_intercept: True
+  val_acc: 80.56713928273561
+  val_avg_group_acc: 75.00818225683867
+  val_worst_group_acc: 35.338345864661655
+  val_group_accs: [99.79,70.17,35.34,94.74]
+  test_acc: 78.96099413186055
+  test_avg_group_acc: 74.4246603256177
+  test_worst_group_acc: 39.719626168224295
+  test_group_accs: [99.73,65.41,39.72,92.83]
+  sampler: random
+  seconds: 0
+[TIME] sweep: median min/trial=0.0000 | total tuning GPU-hours=0.0000
+[TIME] sweep: median min/epoch=N/A (no epoch notion for CLIP+LR)

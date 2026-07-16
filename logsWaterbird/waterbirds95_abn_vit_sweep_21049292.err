@@ -1,0 +1,76 @@
+[I 2026-02-15 19:10:15,604] A new study created in memory with name: no-name-bec7799d-5ab8-48f8-bf7b-5a39546709f2
+[I 2026-02-15 20:09:47,805] Trial 0 finished with value: 0.6286455689061883 and parameters: {'base_lr': 7.732927639412404e-06, 'classifier_lr': 1.6884577147932012e-05, 'weight_decay': 0.0002374468244560546, 'abn_att_weight': 0.1519038617875141}. Best is trial 0 with value: 0.6286455689061883.
+[I 2026-02-15 21:09:06,000] Trial 1 finished with value: 0.7515130269403412 and parameters: {'base_lr': 3.120349415273752e-05, 'classifier_lr': 0.00011014586274665786, 'weight_decay': 4.684639085758213e-05, 'abn_att_weight': 3.6992133031548184}. Best is trial 1 with value: 0.7515130269403412.
+[I 2026-02-15 22:06:50,904] Trial 2 finished with value: 0.847041236531844 and parameters: {'base_lr': 0.0005975893747455524, 'classifier_lr': 0.0002479843767173225, 'weight_decay': 1.4486888930293198e-05, 'abn_att_weight': 0.13760094487155386}. Best is trial 2 with value: 0.847041236531844.
+[I 2026-02-15 23:05:36,093] Trial 3 finished with value: 0.8409145854991176 and parameters: {'base_lr': 0.00019924474421524645, 'classifier_lr': 2.4283039951414716e-05, 'weight_decay': 0.00011165736204389927, 'abn_att_weight': 0.6630660309349748}. Best is trial 2 with value: 0.847041236531844.
+[I 2026-02-16 00:03:50,854] Trial 4 finished with value: 0.7721655424735472 and parameters: {'base_lr': 2.6077418024775014e-05, 'classifier_lr': 0.008147769845585535, 'weight_decay': 9.557594667838887e-05, 'abn_att_weight': 4.128086923082281}. Best is trial 2 with value: 0.847041236531844.
+[I 2026-02-16 01:02:57,648] Trial 5 finished with value: 0.7512732796621779 and parameters: {'base_lr': 1.0971309889598148e-05, 'classifier_lr': 0.000299611359137979, 'weight_decay': 0.0003414577275129422, 'abn_att_weight': 0.10834562554743163}. Best is trial 2 with value: 0.847041236531844.
+[I 2026-02-16 02:02:16,311] Trial 6 finished with value: 0.639091700311873 and parameters: {'base_lr': 3.5483030153797422e-06, 'classifier_lr': 3.671993700197696e-05, 'weight_decay': 0.00029615676232567557, 'abn_att_weight': 1.382192879866612}. Best is trial 2 with value: 0.847041236531844.
+[I 2026-02-16 03:01:07,413] Trial 7 finished with value: 0.7689662258540242 and parameters: {'base_lr': 7.044405373287935e-06, 'classifier_lr': 0.005239938925366423, 'weight_decay': 0.0002515379309710181, 'abn_att_weight': 2.578615720171929}. Best is trial 2 with value: 0.847041236531844.
+[I 2026-02-16 03:59:08,912] Trial 8 finished with value: 0.7606637171707404 and parameters: {'base_lr': 2.491360538102001e-05, 'classifier_lr': 0.0006346468535256955, 'weight_decay': 1.1392176279300927e-06, 'abn_att_weight': 3.281655908419687}. Best is trial 2 with value: 0.847041236531844.
+[I 2026-02-16 04:57:18,773] Trial 9 finished with value: 0.8637107237547244 and parameters: {'base_lr': 0.0009649408757733444, 'classifier_lr': 2.3949014980125773e-05, 'weight_decay': 3.119289186302204e-05, 'abn_att_weight': 0.13321271720711966}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 05:55:14,712] Trial 10 finished with value: 0.7260212428176551 and parameters: {'base_lr': 1.0363917521834695e-06, 'classifier_lr': 0.0018666369788891176, 'weight_decay': 8.01477817033709e-06, 'abn_att_weight': 0.40854037694584316}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 06:53:44,840] Trial 11 finished with value: 0.8548561919267622 and parameters: {'base_lr': 0.0008411096971921804, 'classifier_lr': 8.007729285623007e-05, 'weight_decay': 1.344788767247115e-05, 'abn_att_weight': 0.26941294203882826}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 07:52:20,179] Trial 12 finished with value: 0.8551281741330818 and parameters: {'base_lr': 0.0007189646832469424, 'classifier_lr': 6.139761330964003e-05, 'weight_decay': 5.084711513110014e-06, 'abn_att_weight': 0.3604170593171742}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 08:50:25,679] Trial 13 finished with value: 0.8567358911748826 and parameters: {'base_lr': 0.00016136878875765793, 'classifier_lr': 1.1484591477488663e-05, 'weight_decay': 2.786936643972284e-06, 'abn_att_weight': 0.28027013863446776}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 09:49:35,562] Trial 14 finished with value: 0.794738050915069 and parameters: {'base_lr': 0.0001515529237670215, 'classifier_lr': 1.09946881955898e-05, 'weight_decay': 1.4561983047798265e-06, 'abn_att_weight': 9.308399142504923}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 10:48:07,812] Trial 15 finished with value: 0.8548642506588013 and parameters: {'base_lr': 0.00015391994781493155, 'classifier_lr': 1.1771161984033e-05, 'weight_decay': 2.610293343634633e-06, 'abn_att_weight': 0.23263413217267287}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 11:46:17,731] Trial 16 finished with value: 0.8462817010371588 and parameters: {'base_lr': 0.0003305372829658578, 'classifier_lr': 4.00902719830773e-05, 'weight_decay': 0.0009461131422175483, 'abn_att_weight': 0.5955700799547065}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 12:45:24,768] Trial 17 finished with value: 0.8132711199219915 and parameters: {'base_lr': 7.820316486034873e-05, 'classifier_lr': 0.00014538302397955783, 'weight_decay': 2.7308074580008893e-05, 'abn_att_weight': 0.19236579739362214}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 13:44:31,039] Trial 18 finished with value: 0.7711340247725423 and parameters: {'base_lr': 6.031611977229855e-05, 'classifier_lr': 0.0009745198648888664, 'weight_decay': 4.390156011250498e-06, 'abn_att_weight': 0.8498248976610738}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 14:42:23,470] Trial 19 finished with value: 0.8314999717944378 and parameters: {'base_lr': 0.00036564769630947983, 'classifier_lr': 2.6706348809778887e-05, 'weight_decay': 2.7712963996943863e-05, 'abn_att_weight': 1.5907181661975054}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 15:42:01,562] Trial 20 finished with value: 0.8422664377986768 and parameters: {'base_lr': 8.856174566058046e-05, 'classifier_lr': 1.0416246697625152e-05, 'weight_decay': 2.2285077978110185e-06, 'abn_att_weight': 0.42674315877121943}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 16:41:56,774] Trial 21 finished with value: 0.8561919267622432 and parameters: {'base_lr': 0.0009857198379087163, 'classifier_lr': 6.860741060202306e-05, 'weight_decay': 4.949786192517296e-06, 'abn_att_weight': 0.2877235807623523}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 17:42:39,366] Trial 22 finished with value: 0.8556560210816431 and parameters: {'base_lr': 0.00042644975996172573, 'classifier_lr': 5.273902271784397e-05, 'weight_decay': 9.388875261310964e-06, 'abn_att_weight': 0.10402489283313208}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 18:42:42,186] Trial 23 finished with value: 0.8588795138972833 and parameters: {'base_lr': 0.0009466166171393871, 'classifier_lr': 2.0802894532228057e-05, 'weight_decay': 3.1812826260382133e-06, 'abn_att_weight': 0.28141761847967156}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 19:43:46,623] Trial 24 finished with value: 0.8564719677006021 and parameters: {'base_lr': 0.0002468208924895733, 'classifier_lr': 2.4103154878802498e-05, 'weight_decay': 2.9381134301928072e-06, 'abn_att_weight': 0.19249853153721402}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 20:43:47,965] Trial 25 finished with value: 0.8610070191556061 and parameters: {'base_lr': 0.0005117974544340258, 'classifier_lr': 1.9564086697336916e-05, 'weight_decay': 4.52555720428735e-05, 'abn_att_weight': 0.16220755990730518}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 21:44:12,836] Trial 26 finished with value: 0.8602233074648036 and parameters: {'base_lr': 0.0005643583192234808, 'classifier_lr': 2.174097143886591e-05, 'weight_decay': 5.676659590714995e-05, 'abn_att_weight': 0.15972097357416554}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 22:43:55,423] Trial 27 finished with value: 0.850528652821765 and parameters: {'base_lr': 0.0004984430331229562, 'classifier_lr': 0.00016868707792944024, 'weight_decay': 6.5086469566719e-05, 'abn_att_weight': 0.15646593334945536}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-16 23:44:00,971] Trial 28 finished with value: 0.8556479623496039 and parameters: {'base_lr': 0.0002960173066028891, 'classifier_lr': 3.825364617924719e-05, 'weight_decay': 4.211577545259117e-05, 'abn_att_weight': 0.10197993663278586}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-17 00:44:08,027] Trial 29 finished with value: 0.8417305321180766 and parameters: {'base_lr': 0.00010277748330684802, 'classifier_lr': 1.7465048429830045e-05, 'weight_decay': 0.00010250689496374748, 'abn_att_weight': 0.15013303938713443}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-17 01:43:21,894] Trial 30 finished with value: 0.8341956176615171 and parameters: {'base_lr': 0.0006170050242413911, 'classifier_lr': 0.00048035918767572097, 'weight_decay': 1.8664177063508013e-05, 'abn_att_weight': 0.5007289035515998}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-17 02:42:19,480] Trial 31 finished with value: 0.8626227949294458 and parameters: {'base_lr': 0.0008477917809787683, 'classifier_lr': 2.0806639150598286e-05, 'weight_decay': 0.0001624145521218428, 'abn_att_weight': 0.16830090687918986}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-17 03:42:10,115] Trial 32 finished with value: 0.8481130478930445 and parameters: {'base_lr': 0.0005149818658936389, 'classifier_lr': 0.00010217085223733733, 'weight_decay': 0.0001519086258999668, 'abn_att_weight': 0.1911892670926759}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-17 04:41:04,836] Trial 33 finished with value: 0.8594234783099227 and parameters: {'base_lr': 0.00043677068327520276, 'classifier_lr': 1.5388251322641042e-05, 'weight_decay': 5.502961628851292e-05, 'abn_att_weight': 0.1549101629419258}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-17 05:40:34,348] Trial 34 finished with value: 0.8503130817397191 and parameters: {'base_lr': 0.00023697472837890898, 'classifier_lr': 3.684415983804355e-05, 'weight_decay': 0.00016179454076341358, 'abn_att_weight': 0.1324661438012086}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-17 06:39:53,356] Trial 35 finished with value: 0.8588633964332052 and parameters: {'base_lr': 0.0006690038558363305, 'classifier_lr': 1.70168067355962e-05, 'weight_decay': 0.0006062733352327705, 'abn_att_weight': 0.20850658521083074}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-17 07:40:37,942] Trial 36 finished with value: 0.8025207713818308 and parameters: {'base_lr': 4.177213926541687e-05, 'classifier_lr': 2.7613588739646235e-05, 'weight_decay': 7.509515922144549e-05, 'abn_att_weight': 0.337056301326932}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-17 08:40:30,111] Trial 37 finished with value: 0.859143437371564 and parameters: {'base_lr': 0.0009822505560059807, 'classifier_lr': 4.881547415482335e-05, 'weight_decay': 4.030702459624039e-05, 'abn_att_weight': 0.11582611697651889}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-17 09:40:12,371] Trial 38 finished with value: 0.8494568414605645 and parameters: {'base_lr': 0.000555446380603435, 'classifier_lr': 9.38935566995109e-05, 'weight_decay': 2.1018297438764764e-05, 'abn_att_weight': 0.13753610985599204}. Best is trial 9 with value: 0.8637107237547244.
+[I 2026-02-17 10:39:42,670] Trial 39 finished with value: 0.7496575038883382 and parameters: {'base_lr': 1.394123769218952e-05, 'classifier_lr': 0.00021171684460183119, 'weight_decay': 0.00016930257640389922, 'abn_att_weight': 0.9284863730910768}. Best is trial 9 with value: 0.8637107237547244.
+[W 2026-02-17 11:10:35,741] Trial 40 failed with parameters: {'base_lr': 3.5549592341410496e-06, 'classifier_lr': 2.9471345465165466e-05, 'weight_decay': 0.00036897382661113006, 'abn_att_weight': 0.1669497316970331} because of the following error: BlockingIOError(11, 'write could not complete without blocking', 0).
+Traceback (most recent call last):
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/optuna/study/_optimize.py", line 201, in _run_trial
+    value_or_values = func(trial)
+  File "run_gals_sweep.py", line 547, in objective
+    row = run_and_record(
+  File "run_gals_sweep.py", line 434, in run_and_record
+    row = run_one_trial(
+  File "run_gals_sweep.py", line 186, in run_one_trial
+    lf.flush()
+BlockingIOError: [Errno 11] write could not complete without blocking
+[W 2026-02-17 11:10:35,744] Trial 40 failed with value None.
+Traceback (most recent call last):
+  File "run_gals_sweep.py", line 700, in <module>
+    main()
+  File "run_gals_sweep.py", line 570, in main
+    study.optimize(objective, n_trials=args.n_trials, catch=(RuntimeError,), callbacks=callbacks)
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/optuna/study/study.py", line 490, in optimize
+    _optimize(
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/optuna/study/_optimize.py", line 63, in _optimize
+    _optimize_sequential(
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/optuna/study/_optimize.py", line 160, in _optimize_sequential
+    frozen_trial_id = _run_trial(study, func, catch)
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/optuna/study/_optimize.py", line 258, in _run_trial
+    raise func_err
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/optuna/study/_optimize.py", line 201, in _run_trial
+    value_or_values = func(trial)
+  File "run_gals_sweep.py", line 547, in objective
+    row = run_and_record(
+  File "run_gals_sweep.py", line 434, in run_and_record
+    row = run_one_trial(
+  File "run_gals_sweep.py", line 186, in run_one_trial
+    lf.flush()
+BlockingIOError: [Errno 11] write could not complete without blocking
+srun: error: skl-a-59: task 0: Exited with exit code 1

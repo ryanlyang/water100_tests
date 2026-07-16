@@ -1,0 +1,180 @@
+# Supplementary R4RR ablation and teacher-variant hyperparameters.
+#
+# This file makes explicit the settings reported in the supplementary
+# sensitivity, teacher-map corruption, and teacher-backbone ablation sections.
+# Unless an entry below changes a value, training hyperparameters match the
+# validation-selected R4RR settings from configs/r4rr_optimized_hparams.yaml.
+
+r4rr_supplementary_ablation_hparams:
+  local_sensitivity:
+    waterbirds100:
+      base_config:
+        attention_epoch: 73
+        kl_lambda: 495.61
+        base_lr: 5.72e-5
+        classifier_lr: 3.57e-3
+        lr2_mult: 0.123
+
+      perturbations:
+        attention_epoch_minus_10:
+          attention_epoch: 63
+          kl_lambda: 495.61
+          base_lr: 5.72e-5
+          classifier_lr: 3.57e-3
+          lr2_mult: 0.123
+
+        attention_epoch_plus_10:
+          attention_epoch: 83
+          kl_lambda: 495.61
+          base_lr: 5.72e-5
+          classifier_lr: 3.57e-3
+          lr2_mult: 0.123
+
+        kl_lambda_x0p75:
+          attention_epoch: 73
+          kl_lambda: 371.7075
+          base_lr: 5.72e-5
+          classifier_lr: 3.57e-3
+          lr2_mult: 0.123
+
+        kl_lambda_x1p25:
+          attention_epoch: 73
+          kl_lambda: 619.5125
+          base_lr: 5.72e-5
+          classifier_lr: 3.57e-3
+          lr2_mult: 0.123
+
+        lr2_mult_x0p75:
+          attention_epoch: 73
+          kl_lambda: 495.61
+          base_lr: 5.72e-5
+          classifier_lr: 3.57e-3
+          lr2_mult: 0.09225
+
+        lr2_mult_x1p25:
+          attention_epoch: 73
+          kl_lambda: 495.61
+          base_lr: 5.72e-5
+          classifier_lr: 3.57e-3
+          lr2_mult: 0.15375
+
+  teacher_map_corruption:
+    shared_corruption_settings:
+      corruption_fraction: 0.15
+      subset_seed: 0
+      blur_kernel_size: 31
+      blur_sigma: 10.0
+      blur_normalization: clamp_nonnegative_then_renormalize
+      blur_degenerate_map_fallback: uniform
+      invert_transform: one_minus_map_then_renormalize
+
+    training_hparams:
+      waterbirds95:
+        attention_epoch: 109
+        kl_lambda: 295.30
+        base_lr: 4.82e-5
+        classifier_lr: 2.93e-3
+        lr2_mult: 0.409
+
+      waterbirds100:
+        attention_epoch: 73
+        kl_lambda: 495.61
+        base_lr: 5.72e-5
+        classifier_lr: 3.57e-3
+        lr2_mult: 0.123
+
+      decoymnist:
+        attention_epoch: 7
+        kl_lambda: 495.61
+        base_lr: 1.00e-3
+        classifier_lr: 1.00e-3
+        lr2_mult: 0.123
+
+      redmeat:
+        attention_epoch: 2
+        kl_lambda: 11.44
+        base_lr: 2.40e-3
+        classifier_lr: 2.33e-4
+        lr2_mult: 1.567
+
+    conditions:
+      clean:
+        corruption_type: none
+        corruption_fraction: 0.0
+
+      blur_15pct:
+        corruption_type: blur
+        corruption_fraction: 0.15
+        blur_kernel_size: 31
+        blur_sigma: 10.0
+
+      invert_15pct:
+        corruption_type: invert
+        corruption_fraction: 0.15
+
+  teacher_backbone_ablations:
+    note: >
+      Teacher-backbone ablations keep the R4RR student, loss, curriculum,
+      optimizer, and validation-selected training hyperparameters fixed.
+      Only the precomputed teacher-map source changes.
+
+    training_hparams:
+      waterbirds95:
+        attention_epoch: 109
+        kl_lambda: 295.30
+        base_lr: 4.82e-5
+        classifier_lr: 2.93e-3
+        lr2_mult: 0.409
+
+      waterbirds100:
+        attention_epoch: 73
+        kl_lambda: 495.61
+        base_lr: 5.72e-5
+        classifier_lr: 3.57e-3
+        lr2_mult: 0.123
+
+      decoymnist:
+        attention_epoch: 7
+        kl_lambda: 495.61
+        base_lr: 1.00e-3
+        classifier_lr: 1.00e-3
+        lr2_mult: 0.123
+
+      redmeat:
+        attention_epoch: 2
+        kl_lambda: 11.44
+        base_lr: 2.40e-3
+        classifier_lr: 2.33e-4
+        lr2_mult: 1.567
+
+    teacher_map_variants:
+      clip_dino:
+        vlm: CLIP
+        refinement: DINO
+        clip_backend: openclip
+        clip_pretrained: openai
+        dino_model: default_dinov2
+
+      openclip_dino:
+        vlm: OpenCLIP
+        refinement: DINO
+        clip_backend: openclip
+        clip_pretrained: laion_default_from_generator
+        dino_model: default_dinov2
+
+      siglip2_dino:
+        vlm: SigLIP2
+        refinement: DINO
+        clip_backend: siglip2
+        clip_model: ViT-B-16-SigLIP2-256
+        clip_pretrained: webli
+        dino_model: default_dinov2
+
+      clip_xcit_dino:
+        vlm: CLIP
+        refinement: XCiT-DINO
+        clip_backend: openclip
+        clip_pretrained: openai
+        dino_model: xcit_medium_24_p16
+        dino_fts_dim: 512
+        dino_decoder_layers: 2

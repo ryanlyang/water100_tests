@@ -1,0 +1,25 @@
+DATA:
+  DATASET: "waterbirds"
+  ROOT: "./data"
+
+  CONFOUNDING_FACTOR: 0.95
+  WATERBIRDS_DIR: "waterbird_complete95_forest2water2"
+  REMOVE_BACKGROUND: False
+
+  ATTENTION_DIR: "NONE" # Since attention will be created
+  SIZE: 224
+
+APPROACH: "clip"
+
+SAVE_FOLDER: "clip_vit_attention"
+MODEL_TYPE: "ViT-B/32"
+ATTENTION_TYPE: "transformer"
+
+# Prompt settings:
+USE_PROMPTS_PER_CLASS: False
+PROMPTS_PER_CLASS:
+  - ["an image of a landbird", "a photo of a landbird"]
+  - ["an image of a waterbird", "a photo of a waterbird"]
+
+PROMPTS: ["an image of a bird", "a photo of a bird"]
+

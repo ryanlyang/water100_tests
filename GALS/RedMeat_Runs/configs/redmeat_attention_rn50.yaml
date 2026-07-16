@@ -1,0 +1,18 @@
+DATA:
+  ROOT: "/home/ryreu/guided_cnn/Food101/data"
+  DATASET: "food_subset"
+  FOOD_SUBSET_DIR: "food-101-redmeat"
+  ATTENTION_DIR: "NONE"
+  SIZE: 224
+  CLASSES: ['prime_rib', 'pork_chop', 'steak', 'baby_back_ribs', 'filet_mignon']
+  SPLIT: 'split'
+
+APPROACH: "clip"
+
+SAVE_FOLDER: "clip_rn50_attention_gradcam"
+MODEL_TYPE: "RN50"
+ATTENTION_TYPE: "gradcam"
+TARGET_LAYER: "layer4.2.relu"
+
+PROMPTS: ["an image of meat", "a photo of meat"]
+

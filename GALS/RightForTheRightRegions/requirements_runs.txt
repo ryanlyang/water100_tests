@@ -1,0 +1,43 @@
+# Requirements for running repro_runs (R4RR + baselines/sweeps + vendored GALS/AFR runners).
+#
+# IMPORTANT:
+# Install torch/torchvision for your CUDA first, then install this file.
+# Example (adjust versions/index for your GPU/CUDA):
+#   pip install --index-url https://download.pytorch.org/whl/cu128 torch torchvision
+#   pip install -r requirements_runs.txt
+
+# Core ML
+numpy
+pandas
+scipy
+scikit-learn
+scikit-image
+Pillow
+opencv-python
+matplotlib
+tqdm
+
+# Training / sweeps / config
+omegaconf
+optuna
+wandb
+pyyaml
+
+# CLIP + text utils used by vendored GALS CLIP package
+ftfy
+regex
+requests
+
+# Dataset/util deps used by vendored runners
+pycocotools
+
+# GALS gradient-CAM path
+# (required by GALS modules that import torchray utilities)
+torchray
+
+# AFR dependencies used by stage-1/stage-2 runners
+timm
+einops
+wilds
+transformers
+pytorch-transformers

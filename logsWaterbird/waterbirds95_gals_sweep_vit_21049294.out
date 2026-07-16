@@ -1,0 +1,15 @@
+[Mon Feb 16 10:57:50 AM EST 2026] Host: skl-a-38.rc.rit.edu
+Repo: /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+Data: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+Attention dir: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2/clip_vit_attention
+Trials: 50 (sampler=tpe sweep_seed=0 train_seed=0 keep=best max_hours=NONE)
+/home/ryreu/miniconda3/envs/gals_a100/bin/python
+[SWEEP] run_name_prefix=gals_waterbird_complete95_forest2water2_21049294
+[SWEEP] Trial 0 done. best_balanced_val_acc=0.7976895615243897
+[SWEEP] Trial 1 done. best_balanced_val_acc=0.7072403678005302
+[SWEEP] Trial 2 done. best_balanced_val_acc=0.8433221316957991
+[SWEEP] Trial 3 done. best_balanced_val_acc=0.8237414275237934
+[SWEEP] Trial 4 done. best_balanced_val_acc=0.8044085293619903
+[SWEEP] Trial 5 done. best_balanced_val_acc=0.8033367180007898
+[SWEEP] Trial 6 done. best_balanced_val_acc=0.801193095278389
+[SWEEP] Trial 7 done. best_balanced_val_acc=0.7472499576916568

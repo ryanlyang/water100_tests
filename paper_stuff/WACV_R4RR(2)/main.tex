@@ -1,0 +1,709 @@
+% WACV 2026 Paper Template
+% based on the ICCV 2025 template (https://media.eventhosts.cc/Conferences/ICCV2025/ICCV2025-Author-Kit-Feb.zip) with
+% WACV-specific details (e.g., 2 tracks) from the WACV 2025 template (https://www.dropbox.com/scl/fi/su44zgdhrzik26p2xu37k/WACV-2025-Author-Kit-Template.zip?rlkey=5qcfimjhxnmx3wlyk7yhk8wg7&dl=0)
+
+\documentclass[10pt,twocolumn,letterpaper]{article}
+
+%%%%%%%%% PAPER TYPE  - PLEASE UPDATE FOR FINAL VERSION
+\usepackage[review,algorithms]{wacv}      % To produce the REVIEW version for the algorithms track
+%\usepackage[review,applications]{wacv}      % To produce the REVIEW version for the applications track
+%\usepackage{wacv}              % To produce the CAMERA-READY version
+%\usepackage[pagenumbers]{wacv} % To force page numbers, e.g. for an arXiv version
+
+% Import additional packages in the preamble file, before hyperref
+\input{preamble}
+
+% It is strongly recommended to use hyperref, especially for the review version.
+% hyperref with option pagebackref eases the reviewers' job.
+% Please disable hyperref *only* if you encounter grave issues, 
+% e.g. with the file validation for the camera-ready version.
+%
+% If you comment hyperref and then uncomment it, you should delete *.aux before re-running LaTeX.
+% (Or just hit 'q' on the first LaTeX run, let it finish, and you should be clear).
+\definecolor{wacvblue}{rgb}{0.21,0.49,0.74}
+\usepackage[pagebackref,breaklinks,colorlinks,allcolors=wacvblue]{hyperref}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{caption} 
+\usepackage{makecell}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{placeins}
+\usepackage{float}
+\usepackage{pgfplots}
+\usepgfplotslibrary{groupplots}
+\pgfplotsset{compat=1.18}
+
+%%%%%%%%% PAPER ID  - PLEASE UPDATE
+\def\wacvPaperID{1888} % *** Enter the WACV Paper ID here
+\def\confName{WACV}
+\def\confYear{2026}
+
+
+%%%%%%%%% TITLE - PLEASE UPDATE
+\title{Right for the Right Regions: Vision-Language Guided Evidence Alignment for Robust Classification}
+
+%%%%%%%%% AUTHORS - PLEASE UPDATE
+\author{First Author\\
+Institution1\\
+Institution1 address\\
+{\tt\small firstauthor@i1.org}
+% For a paper whose authors are all at the same institution,
+% omit the following lines up until the closing ``}''.
+% Additional authors and addresses can be added with ``\and'',
+% just like the second author.
+% To save space, use either the email address or home page, not both
+\and
+Second Author\\
+Institution2\\
+First line of institution2 address\\
+{\tt\small secondauthor@i2.org}
+}
+
+\begin{document}
+\maketitle
+\input{sec/0_abstract}    
+\input{sec/1_intro}
+\input{sec/2_formatting}
+\input{sec/3_finalcopy}
+{
+    \small
+    \bibliographystyle{ieeenat_fullname}
+    \bibliography{main}
+}
+% \newpage 
+% \appendix
+
+% \noindent\textbf{Table of Contents}
+% \begin{itemize}
+%   \item \ref{appendix:qualisamples} Qualitative samples \dotfill \pageref{appendix:qualisamples}
+%   \item \ref{appendix:prompts} Prompts \dotfill \pageref{appendix:prompts}
+%    \item \ref{appendix:implementation_details} Implementation Details \dotfill \pageref{appendix:implementation_details}
+% \item \ref{appendix:teacher_map_cost} Teacher map storage \dotfill \pageref{appendix:teacher_map_cost}
+%     \item \ref{sec:hparam_opt} Hyperparameter Optimization \dotfill \pageref{sec:hparam_opt}
+%      \item \ref{appendix:r4rroptimized} R4RR Optimized Hyperparameters \dotfill \pageref{appendix:r4rroptimized}
+%      \item \ref{appendix:r4rr_sensitivity} Local sensitivity to R4RR hyperparameters \dotfill \pageref{appendix:r4rr_sensitivity}
+%      \item \ref{appendix:teacher_map_corruption} Teacher-map corruption stress test \dotfill \pageref{appendix:teacher_map_corruption}
+%       \item \ref{appendix:vlmablation} Teacher ablation on additional datasets \dotfill \pageref{appendix:vlmablation}
+%         \item \ref{sec:supp_dataset_splits} Dataset splits \dotfill \pageref{sec:supp_dataset_splits}
+
+%   \item \ref{sec:supp_gals_optuna_variants} Additional GALS Optimization \dotfill \pageref{sec:supp_gals_optuna_variants}
+%    % \item \ref{appendix:prompts} Prompts \dotfill \pageref{appendix:prompts}
+%    % \item \ref{appendix:prompts} Prompts \dotfill \pageref{appendix:prompts}
+% \end{itemize}
+
+
+% \section{Dataset}
+% \subsection{Details}\label{datasetdetails}
+% \textbf{DecoyMNIST}~\cite{erion2021improving} is a digit-classification benchmark in which class-indicative gray patches are added to the image boundary. A classifier predicts the digit class from the decoy rather than from the digit itself.
+
+% \textbf{Waterbirds}~\cite{sagawa2019distributionally}  is a benchmark constructed by placing bird images from CUB~\cite{wah2011caltech}  on land or water backgrounds from Places~\cite{zhou2017places}. The target label is bird type, landbird or waterbird, while the background is spuriously correlated with the label during training. We evaluate two settings. In Waterbirds$_{95}$, a small fraction of training samples counter the dominant background-label correlation. In Waterbirds$_{100}$, the label and background are perfectly correlated during training, making this setting especially challenging.
+
+% \textbf{RedMeat}~\cite{petryk2022guiding} is a 5-way classification task derived from Food-101~\cite{bossard2014food}, with classes baby back ribs, filet mignon, pork chop, prime rib, and steak. The training data contains implicit biases and noisy context, including label noise, sauces, plates, side dishes, and other co-occurring visual artifacts. The test split is cleaner, so models that rely on training-only artifacts generalize poorly.
+% \section{Splits}
+% \label{sec:supp_dataset_splits}
+
+% Tables \ref{tab:splits_decoymnist}, \ref{tab:splits_waterbirds95}, \ref{tab:splits_waterbirds100} and \ref{tab:splits_redmeat} report the train/validation/test splits used in all experiments. For DecoyMNIST, we create the validation set by taking a stratified 10\% slice from the original training split (per digit), and we report the resulting counts below.
+
+% % -------------------- DecoyMNIST --------------------
+% \begin{table}[h]
+% \centering
+% \caption{\textbf{DecoyMNIST class-balanced splits (counts per digit).} Validation is a stratified 10\% slice from the original training split.}
+% \label{tab:splits_decoymnist}
+% \scriptsize
+% \setlength{\tabcolsep}{3pt}
+% \renewcommand{\arraystretch}{1.15}
+% \resizebox{\linewidth}{!}{%
+% \begin{tabular}{l cccccccccc}
+% \toprule
+% \textbf{Split} & \textbf{0} & \textbf{1} & \textbf{2} & \textbf{3} & \textbf{4} & \textbf{5} & \textbf{6} & \textbf{7} & \textbf{8} & \textbf{9} \\
+% \midrule
+% Train      & 5331 & 6068 & 5362 & 5518 & 5258 & 4879 & 5326 & 5638 & 5266 & 5354 \\
+% Validation &  592 &  674 &  596 &  613 &  584 &  542 &  592 &  627 &  585 &  595 \\
+% Test       &  980 & 1135 & 1032 & 1010 &  982 &  892 &  958 & 1028 &  974 & 1009 \\
+% \bottomrule
+% \end{tabular}%
+% }
+% \end{table}
+
+% % -------------------- Waterbirds-95 --------------------
+% \begin{table}[h]
+% \centering
+% \caption{\textbf{Waterbirds$_{95}$ splits (group counts).} Groups are the four label$\times$background combinations.}
+% \label{tab:splits_waterbirds95}
+% \scriptsize
+% \setlength{\tabcolsep}{4pt}
+% \renewcommand{\arraystretch}{1}
+% \begin{tabular}{l cccc}
+% \toprule
+% \textbf{Split} &
+% \textbf{Landbird, Land} &
+% \textbf{Landbird, Water} &
+% \textbf{Waterbird, Land} &
+% \textbf{Waterbird, Water} \\
+% \midrule
+% Train      & 3498 & 184 &  56 & 1057 \\
+% Val &  467 & 466 & 133 &  133 \\
+% Test       & 2255 & 2255 & 642 &  642 \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+% % -------------------- Waterbirds-100 --------------------
+% \begin{table}[h]
+% \centering
+% \caption{\textbf{Waterbirds$_{100}$ splits (group counts).} Training is fully biased (no counter-biased groups).}
+% \label{tab:splits_waterbirds100}
+% \scriptsize
+% \setlength{\tabcolsep}{4pt}
+% \renewcommand{\arraystretch}{1.15}
+% \begin{tabular}{l cccc}
+% \toprule
+% \textbf{Split} &
+% \textbf{Landbird, Land} &
+% \textbf{Landbird, Water} &
+% \textbf{Waterbird, Land} &
+% \textbf{Waterbird, Water} \\
+% \midrule
+% Train      & 3684 &   0 &   0 & 1111 \\
+% Val &  465 & 466 & 134 &  134 \\
+% Test       & 2255 & 2255 & 642 &  642 \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+% % -------------------- RedMeat --------------------
+% \begin{table}[h]
+% \centering
+% \caption{\textbf{RedMeat splits (class counts).} Classes follow \cite{petryk2022guiding}.}
+% \label{tab:splits_redmeat}
+% \scriptsize
+% \setlength{\tabcolsep}{4pt}
+% \renewcommand{\arraystretch}{1.15}
+% \begin{tabular}{l ccccc}
+% \toprule
+% \textbf{Split} &
+% \textbf{Baby Back Ribs} &
+% \textbf{Filet Mignon} &
+% \textbf{Pork Chop} &
+% \textbf{Prime Rib} &
+% \textbf{Steak} \\
+% \midrule
+% Train      & 500 & 500 & 500 & 500 & 500 \\
+% Val & 250 & 250 & 250 & 250 & 250 \\
+% Test       & 250 & 250 & 250 & 250 & 250 \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+
+
+
+
+
+% \section{Qualitative samples}\label{appendix:qualisamples}
+% We demonstrate saliency maps for \emph{RedMeat}~\cite{petryk2022guiding}, \emph{DecoyMNIST}~\cite{erion2021improving} and \emph{Waterbirds}~\cite{sagawa2019distributionally} in Figures~\ref{fig:appendixredmeat}, \ref{fig:appendixMNIST}, and \ref{fig:appendixwaterbird}.
+
+% \begin{figure}[h]
+%     \centering
+%     \includegraphics[width=0.95\linewidth]{figs/redmeat_resized.jpg}
+%     \caption{\textbf{Right for the wrong regions vs.\ right for the right regions on RedMeat.} Comparing saliency maps between our method, \emph{GALS}~\cite{petryk2022guiding}, standard \emph{vanilla} model, \emph{ABN}~\cite{fukui2019attention}, \emph{AFR}~\cite{qiu2023simple} and class balanced model (\emph{Upweight}). Shortcut-prone models often attend to spurious context (e.g., background).} 
+%      \label{fig:appendixredmeat}
+% \end{figure}
+
+% \begin{figure}
+%     \centering
+%     \includegraphics[width=0.95\linewidth]{figs/decoymnist_resized.jpg}
+%     \caption{\textbf{Right for the wrong regions vs.\ right for the right regions on DecoyMNIST.} Comparing saliency maps between our method, \emph{GALS}~\cite{petryk2022guiding}, standard \emph{vanilla} model, \emph{ABN}~\cite{fukui2019attention}, \emph{AFR}~\cite{qiu2023simple} and class balanced model (\emph{Upweight}). Shortcut-prone models often attend to spurious context (e.g., background).} 
+%     \label{fig:appendixMNIST}
+% \end{figure}
+
+
+% \begin{figure}
+%     \centering
+%     \includegraphics[width=0.98\linewidth]{figs/waterbirds100_resized.jpg}
+%     \caption{\textbf{Right for the wrong regions vs.\ right for the right regions on Waterbirds.} Comparing saliency maps between our method, \emph{GALS}~\cite{petryk2022guiding}, standard \emph{vanilla} model, \emph{ABN}~\cite{fukui2019attention}, \emph{AFR}~\cite{qiu2023simple} and class balanced model (\emph{Upweight}). Shortcut-prone models often attend to spurious context (e.g., background).} 
+%      \label{fig:appendixwaterbird}
+% \end{figure}
+
+
+% % \begin{figure*}[t]
+% %     \centering
+% %     \includegraphics[width=0.98\linewidth]{figs/home.drawio-compressed.pdf}
+% %     \caption{\textbf{Right for the wrong regions vs.\ right for the right regions.} Comparing saliency maps between our method, \emph{GALS}~\cite{petryk2022guiding}, standard \emph{vanilla} model, \emph{ABN}~\cite{fukui2019attention}, \emph{AFR}~\cite{qiu2023simple} and class balanced model (\emph{Upweight}). Shortcut-prone models often attend to spurious context (e.g., background).} 
+% %     %Our method aligns the student CNN's latent spatial evidence (CAMs) with VLM-derived semantic affinity maps, avoiding shortcut leqrning with spurious features.}
+% %     \label{fig:waterbird}
+% % \end{figure*}
+
+
+
+% \section{Prompts}\label{appendix:prompts}
+
+% Table~\ref{tab:task_level_prompts} shows the task level prompts for each dataset. 
+
+% \begin{table}[h]
+% \centering
+% \caption{Task-level foreground prompts used to generate VLM teacher maps.}
+% \label{tab:task_level_prompts}
+% \small
+% \setlength{\tabcolsep}{6pt}
+% \renewcommand{\arraystretch}{1.05}
+% \begin{tabular}{ll}
+% \toprule
+% \textbf{Dataset} & \textbf{Task-level prompt} \\
+% \midrule
+% Waterbirds & \texttt{"a clean origami of bird"} \\
+% RedMeat    & \texttt{"a clean origami of meat"} \\
+% DecoyMNIST & \texttt{"a clean origami of digit"} \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+
+
+% \paragraph{Why use the prompt \texttt{``a clean origami of \{t\}.''}?}
+% We adopt the fixed prompt wrapper \texttt{``a clean origami of \{t\}.''} because our teacher-map generator follows the same CLIP-based weakly supervised segmentation pipeline used by WeCLIP+~\cite{zhang2024frozen}. In this line of work, prompt wording is part of the pseudo-label generator itself, and prior CLIP-WSSS work reports that prompt choice can materially affect the quality of CLIP Grad-CAM pseudo labels. In particular, the original CLIP-based segmentation method underlying this family found that prompt modifiers such as \texttt{clean} could improve segmentation quality and selected \texttt{``a clean origami of \{\}.''} as its fixed template~\cite{lin2023clip}. We therefore keep that template unchanged when constructing teacher maps, so that our study isolates the effect of \textbf{R4RR}'s evidence-alignment objective and training curriculum rather than introducing an additional prompt-engineering variable.
+
+% We additionally use a set of \emph{background} (distractor) prompts to represent common contextual regions that frequently co-occur with the foreground object and may serve as spurious cues.
+
+
+% \paragraph{Selecting background prompts.}
+% Background prompt selection is lightweight and dataset-driven. For datasets that are predominantly outdoor (e.g., Waterbirds), we include distractors that commonly appear in outdoor scenes (e.g., terrain and natural context). For primarily indoor datasets, we instead include indoor-relevant distractors (e.g., furniture and man-made interiors). We also reuse the general-purpose background terms provided in our repository as a strong default; in practice these general distractors are effective and reduce the need to hand-engineer dataset-specific lists. Background/distractor prompt files are provided in our repository under \texttt{WeCLIPPlus/clip/clip\_texts/}.
+
+
+% \section{Implementation Details}
+% \label{appendix:implementation_details}
+
+% \subsection{Model Details by Dataset}\label{appendix:model_details}
+% \paragraph{Waterbirds.}
+% \begin{itemize}
+%     \item \textbf{Student:} ResNet-50\cite{he2016deep} (ImageNet pretrained), inputs resized to $224\times224$ with ImageNet normalization. 
+%     \item \textbf{Training:} SGD (momentum $0.9$, weight decay $10^{-5}$), batch size $96$, $200$ epochs. 
+% \end{itemize}
+
+% R4RR uses CAM from the final convolutional block; teacher maps are resized to the CAM grid. Alignment is enabled only after the warm-start phase (attention epoch). Model selection uses validation performance computed after alignment is introduced.
+
+% \paragraph{RedMeat.}
+% \begin{itemize}
+%     \item \textbf{Student:} ResNet-50\cite{he2016deep} (ImageNet pretrained), $224\times224$ with ImageNet normalization. 
+%     \item \textbf{Training:} SGD (momentum $0.9$, weight decay $10^{-5}$), batch size $96$, $150$ epochs. 
+% \end{itemize}
+
+% As in Waterbirds, R4RR uses standard CAM from the final convolutional block, with teacher maps resized to the CAM grid. R4RR follows the same Classify$\rightarrow$Joint schedule and validation protocol as Waterbirds.
+
+% \paragraph{DecoyMNIST.}
+% \begin{itemize}
+%     \item \textbf{Student:} LeNet-style CNN on $28\times28$ grayscale inputs normalized to $[-1,1]$. 
+%     \item \textbf{Training:} Adam (weight decay $10^{-4}$), learning rate $10^{-3}$, $19$ epochs (for all methods), model selection by validation accuracy. 
+% \end{itemize}
+% Evidence maps use Grad-CAM on the second convolutional layer. The $19$-epoch budget matches Waterbirds training exposure: $200\cdot 4750/50000 \approx 19$. R4RR again uses Classify$\rightarrow$Joint, with selection performed after alignment is enabled.
+
+
+
+
+
+
+
+% \subsection{Teacher map storage}
+% \label{appendix:teacher_map_cost}
+
+% R4RR uses fixed VLM-derived teacher maps that are generated offline before student training. For hyperparameter optimization, these maps are cached once per dataset and then reused across the full set of Optuna sweeps, so the teacher preprocessing cost is not incurred separately for each hyperparameter trial. In practice, this one-time caching strategy is the natural deployment setting: once the teacher maps are generated, they can be reused throughout tuning and training. For the final five-seed evaluations, however, we regenerate teacher maps separately for each seed and pair them with the corresponding seeded run. This is not required for efficiency, but is a stricter fairness check: it verifies that the reported gains are not tied to a single fixed teacher-map randomization and continue to hold under different seeded instantiations of the teacher preprocessing pipeline.
+
+% The resulting cached teacher maps have a modest storage footprint. Table~\ref{tab:teacher_map_cost} reports the total on-disk size for the full set of generated teacher maps for each dataset, not for a single image. Across all datasets, the cached supervision remains lightweight to store and reuse.
+
+% \begin{table}[h]
+% \centering
+% \caption{\textbf{Cached teacher-map storage.} Total on-disk size for the full set of generated teacher maps for each dataset.}
+% \label{tab:teacher_map_cost}
+% \small
+% \setlength{\tabcolsep}{8pt}
+% \renewcommand{\arraystretch}{1.1}
+% \begin{tabular}{lc}
+% \toprule
+% \textbf{Dataset} & \textbf{Total cached size} \\
+% \midrule
+% Waterbirds$_{95}$  & 19\,MB \\
+% Waterbirds$_{100}$ & 19\,MB \\
+% RedMeat            & 12\,MB \\
+% DecoyMNIST         & 30\,MB \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+
+
+
+
+% \subsection{Hyperparameter Optimization}
+% \label{sec:hparam_opt}
+
+% Unless stated otherwise, we tune hyperparameters \emph{separately} for each dataset (Waterbirds$_{95}$, Waterbirds$_{100}$, RedMeat) and \emph{separately} for each method and configuration (e.g., each GALS variant is swept independently). For most methods, we run 50 Optuna trials~\cite{akiba2019optuna} per \emph{(dataset, method)} setting and choose the best trial using validation performance. On Waterbirds, we select by group-aware validation accuracy (Per$_{Group}$); on RedMeat, we select by standard validation accuracy for the 5-way task. Reported test numbers are mean$\pm$std over five seeds (0--4). Experiments were run on a university HPC cluster with NVIDIA A100 PCIe 40\,GB GPUs and Intel Xeon Gold 6150 CPUs (2.70\,GHz).
+
+
+% For GALS~\cite{petryk2022guiding}, we tune both the default configuration and several design variants under the same Optuna budget, including (i) CLIP ViT vs.\ CLIP RN50 as the language-attention source and (ii) different classifier-attention mechanisms (RRR, Grad-CAM, and ABN). Unless otherwise stated, we report the strongest tuned GALS variant per dataset under this common budget.
+
+% See Table \ref{tab:sweep_spaces_summary} and \ref{tab:sweep_spaces_def}. 
+
+
+
+% \FloatBarrier
+% \begin{table}[!ht]
+% \centering
+% \caption{Hyperparameter tuning summary. Search spaces S1--S9 are defined in Table~\ref{tab:sweep_spaces_def}. Unless noted, $\texttt{weight\_decay}=10^{-5}$ is fixed by the method configuration. Most deep methods use 50 Optuna trials \cite{akiba2019optuna} per dataset; CLIP-ZS is not tuned.}
+% \label{tab:sweep_spaces_summary}
+% \scriptsize
+% \setlength{\tabcolsep}{3pt}
+% \renewcommand{\arraystretch}{1.15}
+% \begin{tabularx}{\linewidth}{l l X l}
+% \toprule
+% \textbf{Family} & \textbf{Variant} & \textbf{Tuned} & \textbf{Space} \\
+% \midrule
+% \multirow{3}{*}{GALS (RRR-style)}
+% & RN50     & \texttt{base\_lr}, \texttt{classifier\_lr}, \texttt{grad\_weight}, \texttt{grad\_criterion} & S1 \\
+% & ViT      & \texttt{base\_lr}, \texttt{classifier\_lr}, \texttt{grad\_weight}, \texttt{grad\_criterion} & S1 \\
+% & OurMasks & \texttt{base\_lr}, \texttt{classifier\_lr}, \texttt{grad\_weight}, \texttt{grad\_criterion} & S1 \\
+% \midrule
+% GALS+GradCAM & ViT & \texttt{base\_lr}, \texttt{classifier\_lr}, \texttt{cam\_weight} & S2 \\
+% GALS+ABN     & ViT & \texttt{base\_lr}, \texttt{classifier\_lr}, \texttt{abn\_att\_weight} & S3 \\
+% Upweight     & --- & \texttt{base\_lr}, \texttt{classifier\_lr} & S4 \\
+% ABN baseline & --- & \texttt{base\_lr}, \texttt{classifier\_lr}, \texttt{abn\_cls\_weight} & S5 \\
+% Vanilla CNN  & --- & \texttt{base\_lr}, \texttt{classifier\_lr}, \texttt{momentum} & S6 \\
+% \midrule
+% \multirow{3}{*}{Ours (R4RR)}
+% & OurMasks & \texttt{attention\_epoch}, \texttt{kl\_lambda}, \texttt{base\_lr}, \texttt{classifier\_lr}, \texttt{lr2\_mult} & S7 \\
+% & RN50     & \texttt{attention\_epoch}, \texttt{kl\_lambda}, \texttt{base\_lr}, \texttt{classifier\_lr}, \texttt{lr2\_mult} & S7 \\
+% & ViT      & \texttt{attention\_epoch}, \texttt{kl\_lambda}, \texttt{base\_lr}, \texttt{classifier\_lr}, \texttt{lr2\_mult} & S7 \\
+% \midrule
+% CLIP+LR & --- & \texttt{C} & S8 \\
+% CLIP-ZS & --- & (none; fixed evaluation) & --- \\
+% \midrule
+% AFR (two-stage grid; not Optuna) & --- & \texttt{gamma}, \texttt{reg\_coeff} & S9 \\
+% \bottomrule
+% \end{tabularx}
+% \end{table}
+% \FloatBarrier
+
+
+% \begin{table}[!ht]
+% \centering
+% \caption{Search space definitions referenced in Table~\ref{tab:sweep_spaces_summary}. Ranges apply when running Optuna sweeps, unless the method is explicitly noted as a grid (AFR). For \texttt{attention\_epoch}, we sweep over valid epoch indices: $0..199$ for Waterbirds (200 epochs) and $0..149$ for RedMeat (150 epochs).}
+% \label{tab:sweep_spaces_def}
+% \scriptsize
+% \setlength{\tabcolsep}{3pt}
+% \renewcommand{\arraystretch}{1.15}
+% \begin{tabularx}{\linewidth}{l X}
+% \toprule
+% \textbf{ID} & \textbf{Definition} \\
+% \midrule
+% S1 & $\texttt{base\_lr}\in[10^{-5},5\cdot10^{-2}]$ (log), $\texttt{classifier\_lr}\in[10^{-5},5\cdot10^{-2}]$ (log), $\texttt{grad\_weight}\in[10^{3},10^{5}]$ (log), $\texttt{grad\_criterion}\in\{\texttt{L1},\texttt{L2}\}$ \\
+% S2 & $\texttt{base\_lr}\in[5\cdot10^{-4},5\cdot10^{-2}]$ (cfg-centered), $\texttt{classifier\_lr}\in[10^{-5},10^{-3}]$ (cfg-centered), $\texttt{cam\_weight}\in[10^{-2},10^{2}]$ (log) \\
+% S3 & $\texttt{base\_lr}\in[10^{-3},10^{-1}]$, $\texttt{classifier\_lr}\in[10^{-4},10^{-2}]$, $\texttt{abn\_att\_weight}\in[10^{-2},10^{2}]$ (log) \\
+% S4 & $\texttt{base\_lr}\in[5\cdot10^{-5},10^{-1}]$, $\texttt{classifier\_lr}\in[5\cdot10^{-5},10^{-1}]$ \\
+% S5 & $\texttt{base\_lr}\in[5\cdot10^{-5},10^{-1}]$, $\texttt{classifier\_lr}\in[5\cdot10^{-5},10^{-1}]$, $\texttt{abn\_cls\_weight}\in[10^{-2},10^{2}]$ (log) \\
+% S6 & $\texttt{base\_lr}\in[10^{-5},5\cdot10^{-2}]$ (log), $\texttt{classifier\_lr}\in[10^{-5},5\cdot10^{-2}]$ (log), $\texttt{momentum}\in[0.85,0.95]$ \\
+% S7 & $\texttt{attention\_epoch}\in\{0,\dots,E-1\}$ ($E{=}200$ Waterbirds, $E{=}150$ RedMeat), $\texttt{kl\_lambda}\in[1,500]$ (log), $\texttt{base\_lr}\in[10^{-5},5\cdot10^{-2}]$ (log), $\texttt{classifier\_lr}\in[10^{-5},5\cdot10^{-2}]$ (log), $\texttt{lr2\_mult}\in[10^{-1},3]$ (log) \\
+% S8 & $\texttt{C}\in[10^{-2},10^{2}]$ (log) \\
+% S9 & (AFR grid; not Optuna) full-paper grid: $\texttt{gamma}\in\{4.0,4.5,\dots,20.0\}$ (33 values), $\texttt{reg\_coeff}\in\{0,0.1,0.2,0.3,0.4\}$ (5 values), for $33\times5=165$ stage-2 configurations per seed. Reduced grids are also supported for debugging. \\
+% \bottomrule
+% \end{tabularx}
+% \end{table}
+% \FloatBarrier
+
+% \paragraph{AFR tuning protocol.} AFR~\cite{qiu2023simple} follows a two-stage procedure that differs from the Optuna sweeps above. For each dataset and seed, we (i) train a standard ERM backbone once, then (ii) freeze the backbone and retrain only the final layer while exhaustively sweeping a fixed grid over (\texttt{gamma}, \texttt{reg\_coeff}). A ``trial'' corresponds to one (\texttt{gamma}, \texttt{reg\_coeff}) pair for one seed (stage-2 only). We use the full grid with $\texttt{gamma}\in\{4.0,4.5,\dots,20.0\}$ and $\texttt{reg\_coeff}\in\{0,0.1,0.2,0.3,0.4\}$, totaling $165$ stage-2 configurations per seed. Within each seed, we select the grid point that maximizes validation worst-group accuracy (\texttt{best\_val\_wga}) and report the corresponding test performance at that validation-selected point $\newline$ (\texttt{best\_test\_at\_val}); we then aggregate mean$\pm$std over seeds 0--4.
+
+
+
+% \paragraph{DecoyMNIST tuning protocol.}
+% We do not tune hyperparameters directly on DecoyMNIST because, in our setting, a validation split drawn from the DecoyMNIST training data is not a reliable proxy for the test-time objective. Since the training set remains fully biased, model selection within that same distribution can favor configurations that fit the decoy shortcut rather than those that genuinely improve robustness under shift. Instead, we treat DecoyMNIST as an out-of-distribution stress test and transfer hyperparameters from Waterbirds$_{100}$, motivated by the fact that both correspond to fully biased training regimes. This choice is intended to be conservative rather than opportunistic: we do not perform dataset-specific hyperparameter search for our method on DecoyMNIST, and the resulting performance should therefore be interpreted as transfer from one fully biased benchmark to another rather than as the outcome of DecoyMNIST-specific tuning. To match compute across datasets, we also align the approximate number of training-image exposures rather than epochs. Because DecoyMNIST uses a single global learning rate, we fix it to $10^{-3}$ and set \texttt{attention\_epoch} by exposure matching. For DecoyMNIST, the reported GALS result uses the same transferred GALS variant selected on Waterbirds$_{100}$, namely the CLIP ViT + RRR-style configuration.
+
+
+% \subsection{R4RR Optimized Hyperparameters}\label{appendix:r4rroptimized}
+
+
+% \paragraph{Reproducibility (full tuned configs).}
+% For full reproducibility, we release the $\newline$
+% validation-selected hyperparameters for \textbf{all} methods, variants, and ablations (for each dataset) in our codebase under \texttt{configs/}. This directory contains dataset- and method-specific YAML configuration files corresponding to the runs reported in the main paper and supplementary material.
+
+% \paragraph{Best R4RR hyperparameters.}
+% Table~\ref{tab:r4rr_best_hparams} reports the validation-selected R4RR hyperparameters used for our main results. For Waterbirds and RedMeat, we report the single best Optuna trial per dataset. For DecoyMNIST, we do not tune; we reuse the Waterbirds$_{100}$ configuration and set \texttt{attention\_epoch} by matching training-image exposures (19 total epochs $\Rightarrow$ \texttt{attention\_epoch}=7).
+
+
+% \paragraph{\texttt{lr2\_mult}.}
+% We use a two-phase schedule where Phase~2 (joint optimization with evidence alignment) resets the optimizer. \texttt{lr2\_mult} is a multiplicative factor applied to the learning rates at the start of Phase~2, i.e., $\texttt{base\_lr}^{(2)}=\texttt{lr2\_mult}\cdot \texttt{base\_lr}$ and $\texttt{classifier\_lr}^{(2)}=\texttt{lr2\_mult}\cdot \texttt{classifier\_lr}$, allowing Phase~2 to run with a smaller or larger step size than Phase~1.
+
+
+% \FloatBarrier
+% \begin{table}[t]
+% \centering
+% \caption{\textbf{R4RR best hyperparameters.} Best validation-selected configuration per dataset for our method. Waterbirds uses $E{=}200$ epochs, RedMeat uses $E{=}150$. DecoyMNIST uses $E{=}19$ and does not tune hyperparameters; we use fixed Adam learning rates and set \texttt{attention\_epoch} by exposure-matching to WB$_{100}$.}
+% \label{tab:r4rr_best_hparams}
+% \scriptsize
+% \setlength{\tabcolsep}{4pt}
+% \renewcommand{\arraystretch}{0.3}
+% \begin{tabular}{lccccc}
+% \toprule
+% \textbf{Dataset} &
+% \texttt{att\_ep} &
+% \texttt{kl\_lambda} &
+% \texttt{base\_lr} &
+% \texttt{classifier\_lr} &
+% \texttt{lr2\_mult} \\
+% \midrule
+% Waterbirds$_{95}$  & 109 & 295.30 & $4.82{\times}10^{-5}$ & $2.93{\times}10^{-3}$ & 0.409 \\
+% Waterbirds$_{100}$ & 73  & 495.61 & $5.72{\times}10^{-5}$ & $3.57{\times}10^{-3}$ & 0.123 \\
+% DecoyMNIST         & 7   & 495.61 & $1.00{\times}10^{-3}$ & $1.00{\times}10^{-3}$ & 0.123 \\
+% RedMeat            & 2   & 11.44  & $2.40{\times}10^{-3}$ & $2.33{\times}10^{-4}$ & 1.567 \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+% \FloatBarrier
+
+
+
+
+
+
+
+
+% \section{Local sensitivity to R4RR-specific hyperparameters}
+% \label{appendix:r4rr_sensitivity}
+
+% To assess whether \textbf{R4RR} depends on a narrowly tuned operating point, we perform a lightweight local sensitivity study around the validation-selected configuration on Waterbirds$_{100}$. Starting from the best hyperparameters reported in Table~\ref{tab:r4rr_best_hparams}, we perturb one R4RR-specific hyperparameter at a time while holding the others fixed. We consider the three method-specific quantities introduced by our two-phase evidence-alignment framework: the alignment start epoch  $\newline$ (\texttt{attention\_epoch}), the evidence-alignment weight (\texttt{kl\_lambda}), and the Phase-2 learning-rate multiplier (\texttt{lr2\_mult}). Each perturbed configuration is evaluated over the same five seeds (0--4) used in the main paper.
+
+% \begin{table}[h]
+% \centering
+% \caption{\textbf{Local sensitivity of R4RR-specific hyperparameters on Waterbirds$_{100}$.} Starting from the validation-selected R4RR configuration, we perturb one hyperparameter at a time while keeping all others fixed. Results are test accuracy (mean$\pm$std over 5 seeds). Higher is better.}
+% \label{tab:r4rr_local_sensitivity}
+% \small
+% \setlength{\tabcolsep}{8pt}
+% \renewcommand{\arraystretch}{1.1}
+% \begin{tabular}{lcc}
+% \toprule
+% \textbf{Setting} & \textbf{Per$_{Group}$} & \textbf{Worst$_{Group}$} \\
+% \midrule
+% \texttt{attention\_epoch} + 10 & 88.9\scriptsize$\pm$0.5 & 83.1\scriptsize$\pm$2.6 \\
+% \texttt{attention\_epoch} - 10 & 89.0\scriptsize$\pm$0.2 & 83.9\scriptsize$\pm$2.5 \\
+% \texttt{lr2\_mult} $\times$ 0.75 & 88.8\scriptsize$\pm$0.8 & 83.8\scriptsize$\pm$2.0 \\
+% \texttt{lr2\_mult} $\times$ 1.25 & 89.0\scriptsize$\pm$0.3 & 84.9\scriptsize$\pm$1.7 \\
+% \texttt{kl\_lambda} $\times$ 0.75 & 88.4\scriptsize$\pm$0.4 & 82.5\scriptsize$\pm$1.5 \\
+% \texttt{kl\_lambda} $\times$ 1.25 & 88.8\scriptsize$\pm$0.2 & 85.1\scriptsize$\pm$1.6 \\
+% \midrule
+% Best tuned config & 89.1\scriptsize$\pm$0.4 & 84.8\scriptsize$\pm$1.0 \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+
+% Table~\ref{tab:r4rr_local_sensitivity} shows that \textbf{R4RR} remains strong under moderate one-at-a-time perturbations of its main method-specific hyperparameters. Across all tested settings, Per$_{Group}$ varies only within a narrow range ($88.4$--$89.1$), and Worst$_{Group}$ remains similarly stable ($82.5$--$85.1$). In particular, modest shifts in the alignment start epoch and the Phase-2 learning-rate multiplier have only small effects on performance, while changes to \texttt{kl\_lambda} lead to somewhat larger but still limited variation. Importantly, none of these nearby settings causes a collapse in worst-group accuracy, indicating that the gains of \textbf{R4RR} do not rely on an extremely fragile choice of hyperparameters.
+
+% Overall, this local sensitivity study supports the view that \textbf{R4RR} is reasonably robust around its validation-selected operating point: the tuned setting remains among the strongest, but neighboring configurations continue to deliver high group-balanced performance in the fully biased Waterbirds$_{100}$ regime. This is encouraging because it suggests that the benefits of evidence alignment arise from the method itself rather than from a razor-thin hyperparameter choice.
+
+
+
+
+
+% \section{Teacher-map corruption stress test}
+% \label{appendix:teacher_map_corruption}
+
+% Because \textbf{R4RR} relies on precomputed VLM-derived teacher maps, an important question is how sensitive the method is to imperfections in those maps. To study this, we perform a lightweight \emph{teacher-map corruption stress test} in which we deliberately degrade a fixed subset of teacher maps before student training and then train \textbf{R4RR} with all other settings unchanged.
+
+% \paragraph{Setup.}
+% For each dataset, we start from the same validation-selected \textbf{R4RR} hyperparameters used in the main paper and supplementary material. We then randomly select a fixed 15\% subset of training examples (using a fixed seed), corrupt the corresponding teacher maps once before training, and keep those same corrupted maps fixed throughout the entire run. This design tests robustness to \emph{persistent} teacher errors rather than transient optimization noise. We consider two corruption types:
+
+% \begin{itemize}
+%     \item \textbf{Blur 15\%:} for the selected 15\% of training examples, we apply an \emph{aggressive} Gaussian blur to each teacher map (OpenCV Gaussian blur; kernel \(31\times31\), \(\sigma_x=\sigma_y=10.0\)). We then clamp values to be nonnegative and renormalize each map to sum to 1. If a blurred map is degenerate (near-zero total mass), we replace it with a uniform map before renormalization. This models strongly spatially diffuse, imprecise teacher supervision rather than mild smoothing.
+%     \item \textbf{Invert 15\%:} replace the selected teacher maps with their inverted versions ($1-M$, followed by renormalization). This creates an intentionally \emph{wrong} teacher signal that suppresses originally high-response regions and emphasizes irrelevant regions instead.
+% \end{itemize}
+
+% All other aspects of training remain unchanged, including the student architecture, curriculum, optimizer settings, and checkpoint-selection protocol. We report mean$\pm$std over the same five seeds used in the main paper.
+
+
+% \begin{table}[t]
+% \centering
+% \caption{\textbf{Teacher-map corruption stress test.} Test accuracy (mean$\pm$std over 5 seeds) for \textbf{R4RR} under fixed corruption of 15\% of training teacher maps. \emph{Clean} denotes the standard unmodified teacher maps used in the main paper. \emph{Blur 15\%} applies strong Gaussian blur to a fixed subset of teacher maps, while \emph{Invert 15\%} replaces a fixed subset with inverted maps. Higher is better.}
+% \label{tab:teacher_map_corruption}
+% \small
+% \setlength{\tabcolsep}{6pt}
+% \renewcommand{\arraystretch}{1.12}
+% \resizebox{0.92\linewidth}{!}{%
+% \begin{tabular}{llcc}
+% \toprule
+% \textbf{Dataset} & \textbf{Teacher-map condition} & \textbf{Per$_{Group}$} & \textbf{Worst$_{Group}$} \\
+% \midrule
+% \multirow{3}{*}{DecoyMNIST}
+% & Clean       & 96.6\scriptsize$\pm$0.1 & 95.8\scriptsize$\pm$1.3 \\
+% & Blur 15\%   & 96.7\scriptsize$\pm$0.19 & 95.5\scriptsize$\pm$0.7 \\
+% & Invert 15\% & 96.8\scriptsize$\pm$0.2 & 95.6\scriptsize$\pm$0.8 \\
+% \midrule
+% \multirow{3}{*}{RedMeat}
+% & Clean       & 73.2\scriptsize$\pm$1.0 & 60.9\scriptsize$\pm$3.4 \\
+% & Blur 15\%   & 72.6\scriptsize$\pm$1.5 & 58.7\scriptsize$\pm$4.6 \\
+% & Invert 15\% & 72.8\scriptsize$\pm$1.1 & 59.4\scriptsize$\pm$5.2 \\
+% \midrule
+% \multirow{3}{*}{Waterbirds$_{100}$}
+% & Clean       & 89.1\scriptsize$\pm$0.4 & 84.8\scriptsize$\pm$1.0 \\
+% & Blur 15\%   & 88.8\scriptsize$\pm$0.5 & 85.0\scriptsize$\pm$1.4 \\
+% & Invert 15\% & 88.7\scriptsize$\pm$0.4 & 84.0\scriptsize$\pm$0.8 \\
+% \midrule
+% \multirow{3}{*}{Waterbirds$_{95}$}
+% & Clean       & 90.2\scriptsize$\pm$0.7 & 87.1\scriptsize$\pm$2.7 \\
+% & Blur 15\%   & 90.2\scriptsize$\pm$0.3 & 88.0\scriptsize$\pm$0.9 \\
+% & Invert 15\% & 90.1\scriptsize$\pm$0.3 & 87.0\scriptsize$\pm$0.8 \\
+% \bottomrule
+% \end{tabular}%
+% }
+% \end{table}
+
+% Table~\ref{tab:teacher_map_corruption} shows that \textbf{R4RR} remains strong under moderate teacher corruption. Across all four dataset settings, corrupting 15\% of the training teacher maps causes only limited changes in performance relative to the clean-teacher reference. On \textbf{DecoyMNIST}, performance is essentially unchanged under both blur and inversion, indicating that \textbf{R4RR} does not require perfectly accurate teacher localization on every example in this highly structured fully biased regime. On \textbf{Waterbirds$_{95}$} and \textbf{Waterbirds$_{100}$}, the results are similarly stable: Per$_{Group}$ remains near the clean baseline, and Worst$_{Group}$ changes only modestly, with no evidence of collapse even when part of the teacher supervision is deliberately corrupted.
+
+% The largest degradation appears on \textbf{RedMeat}, where both corruption types reduce Worst$_{Group}$ accuracy by a small amount relative to the clean setting. This is consistent with RedMeat being the noisiest and least structured benchmark in our suite: when the task itself contains label noise, co-occurring food context, and fine-grained visual ambiguity, imperfect teacher localization is somewhat more harmful. Even so, the corrupted-teacher models remain close to the clean \textbf{R4RR} result, indicating that the method still functions effectively under moderate teacher degradation.
+
+% These results support two conclusions. First, the gains of \textbf{R4RR} do not depend on every teacher map being perfectly precise. A fixed fraction of degraded maps can be tolerated without destroying group-balanced performance. Second, the method appears robust not only to \emph{imprecise} teachers (blurred maps) but also to a moderate amount of \emph{actively misleading} supervision (inverted maps). This strengthens the interpretation that \textbf{R4RR} benefits from the overall structure of teacher-guided evidence alignment rather than from a brittle dependence on exact teacher quality for every individual training sample.
+
+% Overall, this stress test provides additional evidence that \textbf{R4RR} is practically robust: while accurate teacher maps remain beneficial, the method continues to perform strongly even when a nontrivial subset of training-time teacher supervision is degraded.
+
+
+
+
+% \section{Teacher ablation on additional datasets}\label{appendix:vlmablation}
+
+% For all the OpenCLIP teacher variants, we use OpenCLIP with LAION-pretrained weights, while keeping the rest of the teacher pipeline unchanged.
+
+% \begin{table}[h]
+% \caption{Teacher ablation on DecoyMNIST and RedMeat dataset: VLM and refinement backbones while keeping the student, loss, and curriculum fixed. Results are accuracy (mean$\pm$std). Higher is better.}
+% \label{tab:teacher_ablation_appendix}
+% \resizebox{\linewidth}{!}{%
+% \begin{tabular}{@{}lcc|cc|cc@{}}
+% \toprule
+% \multirow{2}{*}{\textbf{Teacher variant}} & \multicolumn{2}{c|}{\textbf{Teacher components}} & \multicolumn{2}{c|}{\textbf{DecoyMNIST}} & \multicolumn{2}{c}{\textbf{RedMeat}} \\
+% \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+%  & \textbf{VLM} & \textbf{Refine} & \textbf{Per$_{Group}$} & \textbf{Worst$_{Group}$} & \textbf{Per$_{Group}$} & \textbf{Worst$_{Group}$} \\
+% \midrule
+% \textbf{Baseline (ours)} & CLIP & DINO & 96.6{\scriptsize$\pm$0.1} & 95.8{\scriptsize$\pm$1.3} & 73.2{\scriptsize$\pm$1.0} & 60.9{\scriptsize$\pm$3.4} \\
+% OpenCLIP teacher & OpenCLIP & DINO & 96.7\scriptsize$\pm$0.4 & 95.6\scriptsize$\pm$1.3 & 72.9\scriptsize$\pm$1.0 & 60.1\scriptsize$\pm$5.1 \\
+% SigLIP2 teacher & SigLIP2 & DINO & 95.9\scriptsize$\pm$0.6 & 94.3\scriptsize$\pm$1.4	 & 67.9\scriptsize$\pm$0.5 & 53.3\scriptsize$\pm$7.7 \\
+% XCiT-DINO refine & CLIP & XCiT-DINO & 96.7\scriptsize$\pm$0.5 & 96.0\scriptsize$\pm$0.8 & 71.5\scriptsize$\pm$0.9 & 54.1\scriptsize$\pm$3.3 \\
+% \bottomrule
+% \end{tabular}}
+% \end{table}
+
+
+
+% Table~\ref{tab:teacher_ablation_appendix} extends the teacher-selection study beyond Waterbirds to DecoyMNIST and RedMeat, while keeping the student architecture, loss, and training curriculum fixed. Overall, the results indicate that our method \textbf{R4RR} is largely \emph{insensitive} to the specific CLIP-family backbone used for generating teacher maps.
+
+% On \textbf{DecoyMNIST}, both the baseline CLIP teacher and OpenCLIP teacher achieve essentially identical performance. This suggests that for synthetic tasks where the foreground concept is visually simple and the shortcut is strong but structured, multiple CLIP-family teachers provide sufficiently accurate localization cues for evidence alignment. Swapping the refinement backbone to XCiT-DINO yields similar performance and a small improvement in worst-group accuracy.
+
+% On \textbf{RedMeat}, the teacher choice has a larger impact. While the baseline CLIP and OpenCLIP teachers nearly match, SigLIP2 degrades both per-group and worst-group accuracy, and replacing DINO with XCiT-DINO also reduces performance.
+
+% The overall trend suggests that stronger teachers yield better worst-group robustness, reinforcing the motivation that \textbf{R4RR} benefits from accurate task-relevant localization, but does not require a uniquely tuned teacher to function.
+
+
+
+% % \section{Ablation: Teacher maps vs.\ objective and schedule}
+% % \label{sec:ablation_gals_vs_r4rr}
+
+% % We run a direct ablation to separate gains over GALS~\cite{petryk2022guiding} into two factors: (i) the \emph{training mechanism} (our KL evidence-alignment objective and two-phase schedule) versus (ii) the \emph{teacher map construction} (WeCLIP+-style~\cite{zhang2024frozen} segmentation pseudo masks produced by CLIP seeds refined with DINO affinities and RFM+), rather than simply using prompt-grounded saliency heatmaps. Concretely, we compare: \textbf{(a) GALS + our maps}, which keeps the original GALS input-gradient regularization but replaces its saliency map source with our WeCLIP+-based pseudo masks; \textbf{(b) R4RR objective + GALS maps}, which keeps our objective/schedule but swaps in GALS-style saliency maps (CLIP RN50 or CLIP ViT); and \textbf{(c) R4RR (ours)}, which combines our objective/schedule with our WeCLIP+-derived maps.
+
+% % \begin{table}[t]
+% % \centering
+% % \caption{\textbf{GALS vs.\ R4RR component ablation.} Test accuracy (mean$\pm$std over 5 runs). Each configuration receives 50 Optuna trials under its own map source and objective/schedule.}
+% % \label{tab:gals_r4rr_ablation}
+% % \normalsize
+% % \setlength{\tabcolsep}{5pt}
+% % \renewcommand{\arraystretch}{1.15}
+% % \resizebox{\linewidth}{!}{%
+% % \begin{tabular}{l cc cc cc}
+% % \toprule
+% % & \multicolumn{2}{c}{\textbf{Waterbirds$_{95}$}} 
+% % & \multicolumn{2}{c}{\textbf{Waterbirds$_{100}$}} 
+% % & \multicolumn{2}{c}{\textbf{RedMeat}} \\
+% % \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+% % \textbf{Scheme} 
+% % & \textbf{Per$_{Group}$} & \textbf{Worst$_{Group}$}
+% % & \textbf{Per$_{Group}$} & \textbf{Worst$_{Group}$}
+% % & \textbf{Per$_{Group}$} & \textbf{Worst$_{Group}$} \\
+% % \midrule
+% % (A) & $87.0 \pm 0.4$ & $70.4 \pm 2.6$
+% %     & $73.2 \pm 2.2$ & $40.9 \pm 9.4$
+% %     & $71.8 \pm 0.7$ & $57.4 \pm 2.2$ \\
+% % (B) & $89.4 \pm 0.3$ & $83.8 \pm 1.5$
+% %     & $87.7 \pm 0.3$ & $76.2 \pm 1.7$
+% %     & $68.9 \pm 1.5$ & $52.3 \pm 6.2$ \\
+% % (C) & $86.1 \pm 1.5$ & $71.6 \pm 4.7$
+% %     & $85.4 \pm 0.1$ & $72.6 \pm 2.0$
+% %     & $67.4 \pm 1.1$ & $51.0 \pm 2.4$ \\
+% % \midrule
+% % (D) & $90.2 \pm 0.7$ & $87.1 \pm 2.7$
+% %     & $89.1 \pm 0.5$ & $85.6 \pm 1.8$
+% %     & $73.2 \pm 1.0$ & $60.9 \pm 3.4$ \\
+% % \bottomrule
+% % \end{tabular}%
+% % }
+% % \vspace{2pt}
+% % \caption*{\textbf{Schemes.} (A) \emph{GALS objective + our teacher maps} (RRR-style attention regularization with WeCLIP+ maps).
+% % (B) \emph{R4RR objective/schedule + GALS RN50 maps}.
+% % (C) \emph{R4RR objective/schedule + GALS ViT maps}.
+% % (D) \emph{R4RR (ours)}: R4RR objective/schedule + our teacher maps.}
+% % \end{table}
+
+% % Table~\ref{tab:gals_r4rr_ablation} shows a consistent pattern across datasets. First, swapping in our WeCLIP+-derived maps while keeping the original GALS objective (\textbf{GALS + our maps}) yields limited benefits and remains brittle when spurious correlation is strongest: on Waterbirds$_{100}$, worst-group accuracy collapses to $40.91$. This indicates that improving the map generator alone does not resolve the optimization issues induced by input-gradient regularization in a fully biased regime.
+
+% % Second, keeping our objective/schedule and swapping the map source (\textbf{R4RR objective + GALS maps}) already recovers a large fraction of the robustness gains on Waterbirds. In particular, both RN50 and ViT map variants substantially improve worst-group performance relative to \textbf{GALS + our maps}, suggesting that the core driver of robustness is the training strategy: aligning \emph{latent} evidence under a warm-started two-phase schedule is more effective than enforcing attention constraints through input-centric regularization.
+
+% % Finally, \textbf{R4RR (ours)} performs best overall across all three datasets, indicating complementarity between the components. Our objective/schedule provides the primary robustness boost, while our WeCLIP+-derived teacher maps provide an additional improvement. Importantly, these gains should be attributed to the WeCLIP+ localization pipeline, which turns prompts into segmentation-style pseudo masks by combining CLIP-based localization seeds with DINO patch-level affinities and the RFM+ refinement module. The benefit is most visible in the hardest setting (Waterbirds$_{100}$) and in the noisy fine-grained regime (RedMeat), where more coherent region-level pseudo masks provide more reliable alignment targets.
+
+
+
+
+% \section{Additional GALS Optimization: Exhaustive Variant Selection}
+% \label{sec:supp_gals_optuna_variants}
+
+% To ensure our comparisons against GALS~\cite{petryk2022guiding} are not confounded by suboptimal configuration choices, we additionally performed a focused sweep over several common GALS instantiations and explanation mechanisms. For each dataset, we tuned each GALS variant independently using the same validation-based Optuna protocol as in the main paper (50 trials per configuration), and report mean$\pm$std over 5 seeds for the best trial within each variant.
+
+% We considered (i) the CLIP backbone used for grounding (RN50 vs.\ ViT), and (ii) the attention supervision mechanism used within the GALS framework (RRR-style gradient regularization, ABN-style attention branch, and a Grad-CAM based variant). In all main tables, we report the strongest GALS result per dataset from this search, so that our method is compared against the best-performing version of GALS we found rather than a single arbitrary instantiation.
+
+% \begin{table}[t]
+% \centering
+% \caption{\textbf{Optuna-optimized GALS variant sweep.} Test accuracy (mean$\pm$std over 5 runs) for multiple GALS instantiations, each tuned independently with 50 Optuna trials on the validation set. We use the best-performing GALS variant per dataset in the main comparisons.}
+% \label{tab:gals_variant_optuna}
+% \scriptsize
+% \setlength{\tabcolsep}{3pt}
+% \renewcommand{\arraystretch}{1.15}
+% \resizebox{\linewidth}{!}{%
+% \begin{tabular}{l cc cc cc}
+% \toprule
+% & \multicolumn{2}{c}{\textbf{Waterbirds$_{95}$}} 
+% & \multicolumn{2}{c}{\textbf{Waterbirds$_{100}$}} 
+% & \multicolumn{2}{c}{\textbf{RedMeat}} \\
+% \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+% \textbf{GALS variant}
+% & \textbf{Per$_{Group}$} & \textbf{Worst$_{Group}$}
+% & \textbf{Per$_{Group}$} & \textbf{Worst$_{Group}$}
+% & \textbf{Test Acc.} & \textbf{Worst Class} \\
+% \midrule
+% GALS RRR (CLIP RN50)
+% & $86.8 \pm 0.4$ & $69.2 \pm 2.2$
+% & $73.3 \pm 2.0$ & $38.1 \pm 6.3$
+% & $71.9 \pm 0.3$ & $57.0 \pm 1.5$ \\
+% GALS RRR (CLIP ViT)
+% & $89.1 \pm 0.4$ & $76.0 \pm 1.9$
+% & $79.9 \pm 2.1$ & $57.2 \pm 5.5$
+% & $71.5 \pm 0.5$ & $54.6 \pm 3.8$ \\
+% GALS ABN (CLIP ViT)
+% & $86.1 \pm 2.2$ & $68.2 \pm 7.5$
+% & $69.7 \pm 2.7$ & $34.2 \pm 6.4$
+% & $70.1 \pm 1.4$ & $51.4 \pm 8.4$ \\
+% GALS Grad-CAM (CLIP ViT)
+% & $84.7 \pm 0.1$ & $68.8 \pm 0.7$
+% & $71.7 \pm 3.4$ & $39.1 \pm 4.5$
+% & $70.4 \pm 1.0$ & $51.7 \pm 5.6$ \\
+% \bottomrule
+% \end{tabular}%
+% }
+% \end{table}
+% \noindent
+
+% Table~\ref{tab:gals_variant_optuna} shows that, even after independently tuning multiple plausible GALS variants with the same 50-trial Optuna budget, the relative ordering is stable: the best-performing GALS configuration depends on the dataset, but none closes the gap to our method in the hardest spurious-correlation regimes. In particular, CLIP ViT improves over RN50 on Waterbirds (especially Waterbirds$_{100}$), while RN50 is slightly stronger on RedMeat under worst-class performance. Based on these results, we always select the best GALS variant per dataset for the main-paper comparisons, ensuring that reported gains are not an artifact of under-tuning or an unfavorable GALS instantiation.
+
+
+\end{document}

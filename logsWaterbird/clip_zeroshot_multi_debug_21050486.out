@@ -1,0 +1,112 @@
+[Thu Feb 12 05:49:13 PM EST 2026] Host: skl-a-48.rc.rit.edu
+Repo: /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+CLIP model: RN50
+Seeds: 0,1,2,3,4
+Splits: val,test
+RUN_WB95=1 RUN_WB100=1 RUN_REDMEAT=1
+/home/ryreu/miniconda3/envs/gals_a100/bin/python
+
+=== [ZERO-SHOT] WATERBIRDS95 ===
+Data: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+Output: /home/ryreu/guided_cnn/logsWaterbird/clip_zeroshot_wb95_21050486.csv
+[ZERO-SHOT] Extracting features for split=val...
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 933
+NUMBER OF SAMPLES WITH LABEL Waterbird: 266
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 467
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 466
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 133
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 133
+[ZERO-SHOT] Extracting features for split=test...
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 4510
+NUMBER OF SAMPLES WITH LABEL Waterbird: 1284
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 2255
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 2255
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 642
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 642
+
+[ZERO-SHOT] Per-seed results
+  seed=0 | val: acc=78.7323, bal_grp=73.4258, worst_grp=37.5940 | test: acc=78.6848, bal_grp=73.6902, worst_grp=44.0810
+  seed=1 | val: acc=78.7323, bal_grp=73.4258, worst_grp=37.5940 | test: acc=78.6848, bal_grp=73.6902, worst_grp=44.0810
+  seed=2 | val: acc=78.7323, bal_grp=73.4258, worst_grp=37.5940 | test: acc=78.6848, bal_grp=73.6902, worst_grp=44.0810
+  seed=3 | val: acc=78.7323, bal_grp=73.4258, worst_grp=37.5940 | test: acc=78.6848, bal_grp=73.6902, worst_grp=44.0810
+  seed=4 | val: acc=78.7323, bal_grp=73.4258, worst_grp=37.5940 | test: acc=78.6848, bal_grp=73.6902, worst_grp=44.0810
+
+[SUMMARY] Mean +/- std across seeds
+  val_acc: 78.7323 +/- 0.0000
+  val_balanced_group_acc: 73.4258 +/- 0.0000
+  val_worst_group_acc: 37.5940 +/- 0.0000
+  test_acc: 78.6848 +/- 0.0000
+  test_balanced_group_acc: 73.6902 +/- 0.0000
+  test_worst_group_acc: 44.0810 +/- 0.0000
+
+[ZERO-SHOT] Wrote: /home/ryreu/guided_cnn/logsWaterbird/clip_zeroshot_wb95_21050486.csv
+[ZERO-SHOT] Note: For fixed CLIP model+prompts, zero-shot inference is deterministic, so per-seed rows are expected to match.
+
+=== [ZERO-SHOT] WATERBIRDS100 ===
+Data: /home/ryreu/guided_cnn/waterbirds/waterbird_1.0_forest2water2
+Output: /home/ryreu/guided_cnn/logsWaterbird/clip_zeroshot_wb100_21050486.csv
+[ZERO-SHOT] Extracting features for split=val...
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_1.0_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 931
+NUMBER OF SAMPLES WITH LABEL Waterbird: 268
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 465
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 466
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 134
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 134
+[ZERO-SHOT] Extracting features for split=test...
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_1.0_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 4510
+NUMBER OF SAMPLES WITH LABEL Waterbird: 1284
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 2255
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 2255
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 642
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 642
+
+[ZERO-SHOT] Per-seed results
+  seed=0 | val: acc=79.0659, bal_grp=73.6404, worst_grp=41.7910 | test: acc=78.8057, bal_grp=73.3500, worst_grp=43.7695
+  seed=1 | val: acc=79.0659, bal_grp=73.6404, worst_grp=41.7910 | test: acc=78.8057, bal_grp=73.3500, worst_grp=43.7695
+  seed=2 | val: acc=79.0659, bal_grp=73.6404, worst_grp=41.7910 | test: acc=78.8057, bal_grp=73.3500, worst_grp=43.7695
+  seed=3 | val: acc=79.0659, bal_grp=73.6404, worst_grp=41.7910 | test: acc=78.8057, bal_grp=73.3500, worst_grp=43.7695
+  seed=4 | val: acc=79.0659, bal_grp=73.6404, worst_grp=41.7910 | test: acc=78.8057, bal_grp=73.3500, worst_grp=43.7695
+
+[SUMMARY] Mean +/- std across seeds
+  val_acc: 79.0659 +/- 0.0000
+  val_balanced_group_acc: 73.6404 +/- 0.0000
+  val_worst_group_acc: 41.7910 +/- 0.0000
+  test_acc: 78.8057 +/- 0.0000
+  test_balanced_group_acc: 73.3500 +/- 0.0000
+  test_worst_group_acc: 43.7695 +/- 0.0000
+
+[ZERO-SHOT] Wrote: /home/ryreu/guided_cnn/logsWaterbird/clip_zeroshot_wb100_21050486.csv
+[ZERO-SHOT] Note: For fixed CLIP model+prompts, zero-shot inference is deterministic, so per-seed rows are expected to match.
+
+=== [ZERO-SHOT] REDMEAT ===
+Data: /home/ryreu/guided_cnn/Food101/data/food-101-redmeat
+Output: /home/ryreu/guided_cnn/logsRedMeat/clip_zeroshot_redmeat_21050486.csv
+[ZERO-SHOT] Extracting features for split=val...
+[ZERO-SHOT] Extracting features for split=test...
+
+[ZERO-SHOT] Per-seed results
+  seed=0 | val: acc=57.8400, bal_cls=57.8400, worst_cls=7.6000 | test: acc=61.5200, bal_cls=61.5200, worst_cls=5.6000
+  seed=1 | val: acc=57.8400, bal_cls=57.8400, worst_cls=7.6000 | test: acc=61.5200, bal_cls=61.5200, worst_cls=5.6000
+  seed=2 | val: acc=57.8400, bal_cls=57.8400, worst_cls=7.6000 | test: acc=61.5200, bal_cls=61.5200, worst_cls=5.6000
+  seed=3 | val: acc=57.8400, bal_cls=57.8400, worst_cls=7.6000 | test: acc=61.5200, bal_cls=61.5200, worst_cls=5.6000
+  seed=4 | val: acc=57.8400, bal_cls=57.8400, worst_cls=7.6000 | test: acc=61.5200, bal_cls=61.5200, worst_cls=5.6000
+
+[SUMMARY] Mean +/- std across seeds
+  val_acc: 57.8400 +/- 0.0000
+  val_balanced_class_acc: 57.8400 +/- 0.0000
+  val_worst_class_acc: 7.6000 +/- 0.0000
+  test_acc: 61.5200 +/- 0.0000
+  test_balanced_class_acc: 61.5200 +/- 0.0000
+  test_worst_class_acc: 5.6000 +/- 0.0000
+
+[ZERO-SHOT] Wrote: /home/ryreu/guided_cnn/logsRedMeat/clip_zeroshot_redmeat_21050486.csv
+[ZERO-SHOT] Note: For fixed CLIP model+prompts, inference is deterministic, so per-seed rows are expected to match.
+
+[DONE] Zero-shot runs finished.
+  WB95 CSV:    /home/ryreu/guided_cnn/logsWaterbird/clip_zeroshot_wb95_21050486.csv
+  WB100 CSV:   /home/ryreu/guided_cnn/logsWaterbird/clip_zeroshot_wb100_21050486.csv
+  RedMeat CSV: /home/ryreu/guided_cnn/logsRedMeat/clip_zeroshot_redmeat_21050486.csv

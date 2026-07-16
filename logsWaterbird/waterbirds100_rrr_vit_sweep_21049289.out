@@ -1,0 +1,26 @@
+[Sat Feb 14 01:43:26 PM EST 2026] Host: skl-a-43.rc.rit.edu
+Repo: /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+Data: /home/ryreu/guided_cnn/waterbirds/waterbird_1.0_forest2water2
+Attention dir: /home/ryreu/guided_cnn/waterbirds/waterbird_1.0_forest2water2/clip_vit_attention
+/home/ryreu/miniconda3/envs/gals_a100/bin/python
+[SWEEP] run_name_prefix=rrr_waterbird_1.0_forest2water2_21049289
+[SWEEP] Trial 0 done. best_balanced_val_acc=0.6423661766356189
+[SWEEP] Trial 1 done. best_balanced_val_acc=0.6803008320374497
+[SWEEP] Trial 2 done. best_balanced_val_acc=0.5942835500264521
+[SWEEP] Trial 3 done. best_balanced_val_acc=0.5912255318466743
+[SWEEP] Trial 4 done. best_balanced_val_acc=0.6335468201420396
+[SWEEP] Trial 5 done. best_balanced_val_acc=0.674818041906472
+[SWEEP] Trial 6 done. best_balanced_val_acc=0.6474261346329576
+[SWEEP] Trial 7 done. best_balanced_val_acc=0.6369675521426167
+[SWEEP] Trial 8 done. best_balanced_val_acc=0.6459011334305914
+[SWEEP] Trial 9 done. best_balanced_val_acc=0.6748460971191305
+[SWEEP] Trial 10 done. best_balanced_val_acc=0.6605138913381534
+[SWEEP] Trial 11 done. best_balanced_val_acc=0.6643875146287894
+[SWEEP] Trial 12 done. best_balanced_val_acc=0.6877635186046138
+[SWEEP] Trial 13 done. best_balanced_val_acc=0.6618144508392516
+[SWEEP] Trial 14 done. best_balanced_val_acc=0.6805833881077961
+[SWEEP] Trial 15 done. best_balanced_val_acc=0.6631430655530084
+[SWEEP] Trial 16 done. best_balanced_val_acc=0.6677220770476298
+[SWEEP] Trial 17 done. best_balanced_val_acc=0.6406988954261987
+[SWEEP] Trial 18 done. best_balanced_val_acc=0.6670727992689613
+[SWEEP] Trial 19 done. best_balanced_val_acc=0.691240361030508

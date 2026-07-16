@@ -1,0 +1,45 @@
+DATA:
+  DATASET: "waterbirds"
+  NUM_CLASSES: 2
+  BATCH_SIZE: 96
+  CONFOUNDING_FACTOR: 0.95
+  WATERBIRDS_DIR: "waterbird_complete95_forest2water2"
+  ATTENTION_DIR: "clip_vit_attention"
+
+EXP:
+  APPROACH: "abn"
+
+  MODEL: "resnet50_abn"
+  PRETRAINED: True
+
+  PROVIDED_ATT: "NONE"
+  PROVIDED_ATT_SHAPE: [14,14]
+  ABN_ADD_AFTER_ATTENTION: True
+
+  LOSSES:
+    CLASSIFICATION:
+      WEIGHT: 1
+    ABN_CLASSIFICATION:
+      COMPUTE: True
+      LOG: False
+      WEIGHT: 1
+    ABN_SUPERVISION:
+      COMPUTE: True
+      LOG: False
+      WEIGHT: 1
+      CRITERION: "L1"
+      GT: "clip_vit"
+      MODE: "suppress_outside"
+      COMBINE_ATT_MODE: "average_nonzero"
+
+  NUM_EPOCHS: 200
+  OPTIMIZER: "SGD"
+  WEIGHT_DECAY: 1e-5
+  MOMENTUM: 0.9
+  SCHEDULER: "NONE"
+
+  BASE:
+    LR: 0.01
+
+  CLASSIFIER:
+    LR: 0.001

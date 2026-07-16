@@ -1,0 +1,2 @@
+/var/spool/slurmd/job21048936/slurm_script: line 83: 671920 Segmentation fault      (core dumped) "$@" > "$log" 2>&1
+/var/spool/slurmd/job21048936/slurm_script: line 83: 672259 Segmentation fault      (core dumped) "$@" > "$log" 2>&1

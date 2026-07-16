@@ -1,0 +1,663 @@
+"""Optuna hyperparameter sweep for Grad-CAM guided LeNet on ColorMNIST.
+
+Phase 1 (100 trials): Optuna explores lr (base), lr2 (classifier),
+                      lr2_mult (post-epoch-1 LR multiplier).
+                      StepLR settings are fixed.
+                      Objective = best optim_value seen during training.
+                      Adam throughout, reset after epoch 1 with scaled LRs + StepLR.
+                      Uses Grad-CAM on original FC LeNet.
+                      Pruning disabled.
+
+Phase 2: Take the best trial's hyperparameters and train 5 seeds each on:
+         - Original GT_PATH (WeCLIP)
+         - OpenAI XCiT GT path
+         - OpenCLIP GT path
+"""
+
+from __future__ import print_function
+import argparse
+import time
+import os
+import sys
+import re
+import random
+import pickle as pkl
+from copy import deepcopy
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import torch.utils.data as utils
+from torchvision import transforms
+from torchvision.datasets import ImageFolder
+from torchvision.transforms import Compose, ToTensor, Lambda, Grayscale
+import cv2
+from PIL import Image
+
+import optuna
+
+# -- GT paths for multi-mask evaluation ---------------------------------------
+GT_PATHS = {
+    "WeCLIP": "/home/ryreu/guided_cnn/MNIST_AGAIN/ColorGen/LearningToLook/code/WeCLIPPlus/results_mnist/val/prediction_cmap",
+    "OpenAI_XCiT": "/home/ryreu/guided_cnn/MNIST_AGAIN/ColorGen/LearningToLook/code/WeCLIPPlus/results_mnist_openai_xcit/val/prediction_cmap",
+    "OpenCLIP": "/home/ryreu/guided_cnn/MNIST_AGAIN/ColorGen/LearningToLook/code/WeCLIPPlus/results_mnist_openclip/val/prediction_cmap",
+}
+
+_here = os.path.dirname(os.path.abspath(__file__))
+_repo_root = os.path.abspath(os.path.join(_here, ".."))
+sys.path.append(os.path.join(_here, "ColorMNIST"))
+from params_save import S
+
+model_path = os.path.join(_repo_root, "models", "ColorMNIST_test")
+os.makedirs(model_path, exist_ok=True)
+torch.backends.cudnn.deterministic = True
+FIXED_KL_LAMBDA = 200.0
+CE_WARMUP_EPOCHS = 5
+IMG_SIZE = 40
+
+
+# -- CLI args -----------------------------------------------------------------
+parser = argparse.ArgumentParser(description="Optuna sweep for Grad-CAM guided ColorMNIST LeNet")
+parser.add_argument("--png-root", type=str, default=None)
+parser.add_argument("--gt-path", type=str, required=True)
+parser.add_argument("--epochs", type=int, default=30)
+parser.add_argument("--batch-size", type=int, default=64)
+parser.add_argument("--test-batch-size", type=int, default=1000)
+parser.add_argument("--weight-decay", type=float, default=1e-4)
+parser.add_argument("--beta", type=float, default=1.0)
+parser.add_argument("--val-frac", type=float, default=0.16)
+parser.add_argument("--no-cuda", action="store_true", default=False)
+parser.add_argument("--log-interval", type=int, default=100)
+parser.add_argument("--n-trials", type=int, default=100,
+                    help="Number of Optuna trials to run (default: 100)")
+parser.add_argument("--n-seeds", type=int, default=5,
+                    help="Number of seeds for final evaluation per GT path (default: 5)")
+parser.add_argument("--study-name", type=str, default="colormnist_param_gradcam")
+parser.add_argument("--db-path", type=str, default=None,
+                    help="SQLite path for Optuna storage (default: auto)")
+parser.add_argument("--val-saliency", type=str, default="cam",
+                    choices=["cam", "igrad"],
+                    help="Saliency used for validation metric: Grad-CAM or input gradients.")
+parser.add_argument("--val-metric", type=str, default="rev_kl",
+                    choices=["rev_kl", "fwd_kl", "outside"],
+                    help="Validation metric against GT masks.")
+
+args = parser.parse_args()
+# This ablation always validates with input gradients + reverse KL.
+if args.val_saliency != "igrad" or args.val_metric != "rev_kl":
+    print("Forcing validation strategy to val_saliency=igrad and val_metric=rev_kl for this ablation.")
+args.val_saliency = "igrad"
+args.val_metric = "rev_kl"
+if args.beta != 1.0:
+    print("Forcing beta=1.0 for this ablation.")
+args.beta = 1.0
+use_cuda = not args.no_cuda and torch.cuda.is_available()
+device = torch.device("cuda" if use_cuda else "cpu")
+loader_kwargs = {"num_workers": 1, "pin_memory": True} if use_cuda else {}
+png_root = args.png_root or os.path.join(_repo_root, "data", "ColorMNIST_png")
+
+
+# -- Model: original FC LeNet (can learn decoy shortcut) ---------------------
+class Net(nn.Module):
+    def __init__(self):
+        super(Net, self).__init__()
+        self.conv1 = nn.Conv2d(3, 20, 5, 1)
+        self.conv2 = nn.Conv2d(20, 50, 5, 1)
+        # Input is resized to IMG_SIZE (36), so feature map is 6x6 before fc1.
+        self.fc1 = nn.Linear(6*6*50, 256)
+        self.fc2 = nn.Linear(256, 10)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = x.view(-1, 6*6*50)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
+
+    def logits(self, x):
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = x.view(-1, 6*6*50)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+
+
+class ExpandWhite(object):
+    def __init__(self, thr: int = 10, radius: int = 3):
+        self.thr = thr
+        self.radius = radius
+    def __call__(self, mask: Image.Image) -> Image.Image:
+        arr = np.array(mask)
+        white = (arr > self.thr).astype(np.uint8)
+        k = cv2.getStructuringElement(cv2.MORPH_RECT, (2 * self.radius + 1, 2 * self.radius + 1))
+        dil = cv2.dilate(white, k, iterations=1)
+        return Image.fromarray((dil * 255).astype(np.uint8))
+
+
+class EdgeExtract(object):
+    def __init__(self, thr: int = 10, edge_width: int = 1):
+        self.thr = thr
+        self.edge_width = edge_width
+    def __call__(self, mask: Image.Image) -> Image.Image:
+        arr = np.array(mask)
+        white = (arr > self.thr).astype(np.uint8)
+        k = cv2.getStructuringElement(cv2.MORPH_RECT, (2 * self.edge_width + 1, 2 * self.edge_width + 1))
+        edge = cv2.morphologyEx(white, cv2.MORPH_GRADIENT, k)
+        return Image.fromarray((edge * 255).astype(np.uint8))
+
+
+# -- Grad-CAM wrapper --------------------------------------------------------
+class GradCAMWrap(nn.Module):
+    def __init__(self, base_model):
+        super().__init__()
+        self.base = base_model
+        self.features = None
+        self.gradients = None
+        self.base.conv2.register_forward_hook(self._fwd_hook)
+        self.base.conv2.register_full_backward_hook(self._bwd_hook)
+
+    def _fwd_hook(self, module, inp, out):
+        self.features = out
+
+    def _bwd_hook(self, module, grad_in, grad_out):
+        self.gradients = grad_out[0]
+
+    def forward(self, x):
+        return self.base(x)
+
+    def grad_cam(self, targets):
+        """Compute Grad-CAM saliency. Call AFTER backward populates self.gradients."""
+        weights = self.gradients.mean(dim=(2, 3))  # (B, C)
+        cams = torch.einsum('bc,bchw->bhw', weights, self.features)
+        cams = torch.relu(cams)
+        flat = cams.view(cams.size(0), -1)
+        mn, _ = flat.min(dim=1, keepdim=True)
+        mx, _ = flat.max(dim=1, keepdim=True)
+        sal_norm = ((flat - mn) / (mx - mn + 1e-8)).view_as(cams)
+        return sal_norm
+
+
+def make_gradcam_model():
+    return GradCAMWrap(Net())
+
+
+def _get_param_groups(model, base_lr, classifier_lr):
+    base_params = []
+    classifier_params = []
+    for name, param in model.named_parameters():
+        if ".fc2" in name or name.startswith("fc2") or ".classifier" in name or name.startswith("classifier"):
+            classifier_params.append(param)
+        else:
+            base_params.append(param)
+    if not classifier_params:
+        classifier_params = list(model.parameters())
+        base_params = []
+    param_groups = []
+    if base_params:
+        param_groups.append({"params": base_params, "lr": base_lr})
+    param_groups.append({"params": classifier_params, "lr": classifier_lr})
+    return param_groups
+
+
+# -- Mask transforms ----------------------------------------------------------
+class Brighten:
+    def __init__(self, factor):
+        self.factor = factor
+
+    def __call__(self, mask):
+        return torch.clamp(mask * self.factor, 0.0, 1.0)
+
+
+# -- Dataset ------------------------------------------------------------------
+class GuidedImageFolder(utils.Dataset):
+    def __init__(self, image_root, mask_root, image_transform=None, mask_transform=None):
+        self.images = ImageFolder(image_root, transform=image_transform)
+        self.mask_root = mask_root
+        self.mask_transform = mask_transform
+        self._mask_exts = (".png", ".jpg", ".jpeg")
+
+    def _resolve_mask_path(self, base, class_name):
+        candidates = [f"{class_name}_{base}", base]
+        if "_lbl" in base:
+            candidates.append(base.split("_lbl")[0])
+            candidates.append(re.sub(r"_lbl\d+$", "", base))
+            candidates.append(re.sub(r"_lbl\d+", "", base))
+        for stem in candidates:
+            for ext in self._mask_exts:
+                path = os.path.join(self.mask_root, stem + ext)
+                if os.path.exists(path):
+                    return path
+        tried = [os.path.join(self.mask_root, stem + ext)
+                 for stem in candidates for ext in self._mask_exts]
+        raise FileNotFoundError(
+            f"Mask not found for base='{base}', class='{class_name}'. Tried: {tried}")
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        img, label = self.images[idx]
+        path, _ = self.images.samples[idx]
+        base = os.path.splitext(os.path.basename(path))[0]
+        class_name = os.path.basename(os.path.dirname(path))
+        mask_path = self._resolve_mask_path(base, class_name)
+        mask = Image.open(mask_path).convert("L")
+        if self.mask_transform:
+            mask = self.mask_transform(mask)
+        return img, label, mask
+
+
+# -- Loss helpers --------------------------------------------------------------
+def compute_attn_loss(cams, gt_masks):
+    """Forward KL: KL(Mask || CAM)."""
+    cam_flat = cams.view(cams.size(0), -1)
+    gt_flat = gt_masks.view(gt_masks.size(0), -1)
+    log_p = F.log_softmax(cam_flat, dim=1)
+    gt_prob = gt_flat / (gt_flat.sum(dim=1, keepdim=True) + 1e-8)
+    kl_div = nn.KLDivLoss(reduction="batchmean")
+    return kl_div(log_p, gt_prob)
+
+
+def compute_attn_losses(cams, gt_masks):
+    """Both forward and reverse KL for validation."""
+    cam_flat = cams.view(cams.size(0), -1)
+    gt_flat = gt_masks.view(gt_masks.size(0), -1)
+    log_cam = F.log_softmax(cam_flat, dim=1)
+    cam_prob = F.softmax(cam_flat, dim=1)
+    gt_prob = gt_flat / (gt_flat.sum(dim=1, keepdim=True) + 1e-8)
+    log_gt = torch.log(gt_prob + 1e-8)
+    kl_div = nn.KLDivLoss(reduction="batchmean")
+    forward_kl = kl_div(log_cam, gt_prob)
+    reverse_kl = kl_div(log_gt, cam_prob)
+    return forward_kl, reverse_kl
+
+
+def compute_outside_mass(saliency, gt_masks):
+    """Fraction of saliency mass outside the GT mask. Lower is better."""
+    sal = saliency.view(saliency.size(0), -1)
+    gt = gt_masks.view(gt_masks.size(0), -1)
+    sal = sal / (sal.sum(dim=1, keepdim=True) + 1e-8)
+    outside = sal * (1.0 - gt)
+    return outside.sum(dim=1).mean()
+
+
+def input_grad_saliency(model, data, target):
+    """Compute |d(logit_target)/d(input)| saliency, normalized to [0,1]."""
+    data = data.requires_grad_(True)
+    model.zero_grad()
+    logits = model.base.logits(data)
+    class_scores = logits[torch.arange(len(target), device=device), target]
+    class_scores.sum().backward()
+    grads = data.grad.detach().abs().sum(dim=1)  # B,H,W
+    flat = grads.view(grads.size(0), -1)
+    mn, _ = flat.min(dim=1, keepdim=True)
+    mx, _ = flat.max(dim=1, keepdim=True)
+    sal_norm = ((flat - mn) / (mx - mn + 1e-8)).view_as(grads)
+    return sal_norm
+
+
+def _compute_mean_std(dataset, batch_size=512):
+    loader = utils.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    total = 0
+    sum_ = torch.zeros(3)
+    sumsq = torch.zeros(3)
+    for data, _ in loader:
+        b = data.size(0)
+        total += b * data.size(2) * data.size(3)
+        sum_ += data.sum(dim=(0, 2, 3))
+        sumsq += (data ** 2).sum(dim=(0, 2, 3))
+    mean = sum_ / total
+    std = torch.sqrt(sumsq / total - mean ** 2)
+    return mean, std
+
+
+# -- Build datasets once (shared across all trials) ---------------------------
+print("Loading datasets ...")
+base_transform = Compose([transforms.Resize((IMG_SIZE, IMG_SIZE)), ToTensor(), Lambda(lambda x: x * 255.0)])
+_raw = ImageFolder(os.path.join(png_root, "train"), transform=base_transform)
+_mean, _std = _compute_mean_std(_raw)
+image_transform = Compose([base_transform, transforms.Normalize(_mean.tolist(), _std.tolist())])
+del _raw
+
+mask_transform = transforms.Compose([
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
+    ExpandWhite(thr=10, radius=3),
+    EdgeExtract(thr=10, edge_width=1),
+    transforms.ToTensor(),
+    Brighten(8.0),
+])
+
+full_train = GuidedImageFolder(
+    image_root=os.path.join(png_root, "train"),
+    mask_root=args.gt_path,
+    image_transform=image_transform,
+    mask_transform=mask_transform,
+)
+
+test_dataset = ImageFolder(os.path.join(png_root, "test"), transform=image_transform)
+test_loader = utils.DataLoader(test_dataset, batch_size=args.test_batch_size,
+                               shuffle=False, **loader_kwargs)
+print(f"Full train: {len(full_train)}, Test: {len(test_dataset)}")
+
+
+# =============================================================================
+#  Core training function (returns best optim_value and test acc)
+# =============================================================================
+def run_training(seed, lr, lr2, lr2_mult, ce_max_w,
+                 epochs=None, trial=None, verbose=True):
+    """Train one run.  Returns (best_optim_value, test_acc, best_weights)."""
+    if epochs is None:
+        epochs = args.epochs
+
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
+    # Split train / val
+    g = torch.Generator()
+    g.manual_seed(seed)
+    n_total = len(full_train)
+    n_val = max(1, int(args.val_frac * n_total))
+    n_train = n_total - n_val
+    train_subset, val_subset = utils.random_split(full_train, [n_train, n_val], generator=g)
+
+    train_loader = utils.DataLoader(train_subset, batch_size=args.batch_size,
+                                    shuffle=True, **loader_kwargs)
+    val_loader = utils.DataLoader(val_subset, batch_size=args.batch_size,
+                                  shuffle=False, **loader_kwargs)
+
+    model = make_gradcam_model().to(device)
+
+    # Pre-attention optimizer uses separate base/classifier learning rates.
+    optimizer = optim.Adam(_get_param_groups(model, lr, lr2), weight_decay=args.weight_decay)
+    scheduler = None
+
+    best_model_weights = None
+    best_optim = -100.0
+
+    for epoch in range(1, epochs + 1):
+        # Keep CE off for warmup epochs, then ramp CE linearly up to ce_max_w.
+        if epoch <= CE_WARMUP_EPOCHS:
+            ce_weight = 0.0
+        else:
+            ramp_denom = max(1, epochs - CE_WARMUP_EPOCHS)
+            ce_weight = ce_max_w * float(epoch - CE_WARMUP_EPOCHS) / float(ramp_denom)
+
+        # Reset optimizer after CE warmup with scaled LRs.
+        if epoch == CE_WARMUP_EPOCHS + 1:
+            if verbose:
+                post_base_lr = lr * lr2_mult
+                post_classifier_lr = lr2 * lr2_mult
+                print(
+                    f"  *** Epoch {epoch}: resetting optimizer with post-warmup LR scaling "
+                    f"(base_lr={post_base_lr:.5g}, cls_lr={post_classifier_lr:.5g}) ***"
+                )
+            optimizer = optim.Adam(
+                _get_param_groups(model, lr * lr2_mult, lr2 * lr2_mult),
+                weight_decay=args.weight_decay,
+            )
+            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.3)
+
+        # -- Train --------------------------------------------------------
+        model.train()
+        for data, target, gt_masks in train_loader:
+            data, target = data.to(device), target.to(device)
+            gt_masks = gt_masks.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(data)
+            ce_loss = F.nll_loss(outputs, target)
+
+            # Pass 1: backward class scores to get conv2 gradients for Grad-CAM
+            model.zero_grad()
+            logits = model.base.logits(data)
+            class_scores = logits[torch.arange(len(target), device=device), target]
+            class_scores.sum().backward(retain_graph=True)
+
+            sal_norm = model.grad_cam(target)
+            gt_small = F.interpolate(gt_masks, size=sal_norm.shape[1:],
+                                     mode="nearest").squeeze(1)
+            attn_loss = compute_attn_loss(sal_norm, gt_small)
+
+            # Pass 2: CE ramp + fixed KL(200) attention penalty
+            optimizer.zero_grad()
+            outputs2 = model(data)
+            ce_loss = F.nll_loss(outputs2, target)
+            total_loss = ce_weight * ce_loss + FIXED_KL_LAMBDA * attn_loss
+            total_loss.backward()
+            optimizer.step()
+
+        if scheduler is not None:
+            scheduler.step()
+
+        # -- Validate -----------------------------------------------------
+        model.eval()
+        running_corrects = 0
+        running_attn_rev = 0.0
+        total = 0
+
+        for data, target, gt_masks in val_loader:
+            data, target = data.to(device), target.to(device)
+            gt_masks = gt_masks.to(device)
+
+            # Validation is fixed to RRR-style input gradients.
+            sal_norm = input_grad_saliency(model, data, target)
+
+            gt_small = F.interpolate(gt_masks, size=sal_norm.shape[1:],
+                                     mode="nearest").squeeze(1)
+
+            with torch.no_grad():
+                outputs = model(data)
+                preds = outputs.argmax(dim=1)
+
+                _, metric_val = compute_attn_losses(sal_norm.detach(), gt_small)
+
+                running_corrects += preds.eq(target).sum().item()
+                running_attn_rev += metric_val.item() * data.size(0)
+                total += data.size(0)
+
+        val_acc = running_corrects / total
+        val_metric = running_attn_rev / total
+        optim_num = val_acc * np.exp(-args.beta * val_metric)
+
+        if optim_num > best_optim:
+            best_optim = optim_num
+            best_model_weights = deepcopy(model.state_dict())
+
+        if verbose:
+            print(f"  Epoch {epoch:>2d}  val_acc={100*val_acc:.1f}%  "
+                  f"rev_kl={val_metric:.4f}  ce_w={ce_weight:.3f}/{ce_max_w:.3f}  "
+                  f"kl={FIXED_KL_LAMBDA:.1f}  optim={optim_num:.4f}"
+                  f"{'  *best*' if optim_num >= best_optim else ''}")
+
+        # Report to Optuna (no pruning)
+        if trial is not None:
+            trial.report(best_optim, epoch)
+
+    # -- Test with best-optim checkpoint ----------------------------------
+    if best_model_weights is not None:
+        model.load_state_dict(best_model_weights)
+
+    model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            outputs = model(data)
+            correct += outputs.argmax(dim=1).eq(target).sum().item()
+            total += data.size(0)
+    test_acc = 100.0 * correct / total
+
+    if verbose:
+        print(f"  >> best optim_value = {best_optim:.4f},  "
+              f"test_acc @ best_optim = {test_acc:.1f}%")
+
+    return best_optim, test_acc, best_model_weights
+
+
+# =============================================================================
+#  Phase 1: Optuna sweep
+# =============================================================================
+def objective(trial):
+    lr = trial.suggest_float("lr", 1e-6, 1e-3, log=True)
+    lr2 = trial.suggest_float("lr2", 1e-5, 1e-2, log=True)
+    lr2_mult = trial.suggest_float("lr2_mult", 0.1, 3.0, log=True)
+    ce_max_w = trial.suggest_float("ce_max_w", 0.01, 1.0, log=True)
+
+    print(f"\n{'='*60}")
+    print(f"Trial {trial.number}: lr={lr:.5f}, lr2={lr2:.5f}, lr2_mult={lr2_mult:.3f}, "
+          f"ce_max_w={ce_max_w:.3f}, fixed_kl={FIXED_KL_LAMBDA:.1f}, "
+          f"ce_warmup={CE_WARMUP_EPOCHS}, val=igrad+rev_kl")
+    print(f"{'='*60}")
+
+    best_optim, test_acc, _ = run_training(
+        seed=42,
+        lr=lr,
+        lr2=lr2,
+        lr2_mult=lr2_mult,
+        ce_max_w=ce_max_w,
+        trial=trial,
+        verbose=True,
+    )
+    print(f"Trial {trial.number} finished: optim={best_optim:.4f}, test_acc={test_acc:.1f}%")
+    return best_optim
+
+
+def build_dataset_with_gt(gt_path):
+    """Build GuidedImageFolder with a specific GT path."""
+    return GuidedImageFolder(
+        image_root=os.path.join(png_root, "train"),
+        mask_root=gt_path,
+        image_transform=image_transform,
+        mask_transform=mask_transform,
+    )
+
+
+if __name__ == "__main__":
+    db_path = args.db_path or os.path.join(model_path, f"{args.study_name}.db")
+    storage = f"sqlite:///{db_path}"
+    print(f"\nOptuna storage: {storage}")
+
+    study = optuna.create_study(
+        study_name=args.study_name,
+        storage=storage,
+        direction="maximize",
+        load_if_exists=True,
+        pruner=optuna.pruners.NopPruner(),  # No pruning
+    )
+
+    print(f"\n{'#'*60}")
+    print(f"  Phase 1: Optuna sweep (cap={args.n_trials} trials, no pruning)")
+    print(f"{'#'*60}\n")
+    trials_before = len(study.trials)
+    remaining_trials = max(0, args.n_trials - trials_before)
+    if remaining_trials > 0:
+        t0 = time.time()
+        study.optimize(objective, n_trials=remaining_trials)
+        elapsed = time.time() - t0
+        print(f"\nSweep finished after {elapsed/3600:.2f} h, "
+              f"{len(study.trials)} total trials attempted.")
+    else:
+        print(f"Study already has {trials_before} trials (cap={args.n_trials}); skipping Phase 1 optimization.")
+
+    best = study.best_trial
+    print(f"\nBest trial #{best.number}: optim_value = {best.value:.4f}")
+    print(f"  Params: {best.params}")
+
+    bp = best.params
+
+    # =================================================================
+    #  Phase 2: Evaluate best hyperparameters on all GT paths
+    # =================================================================
+    # Use supplied --gt-path as first, then add the other two from GT_PATHS
+    gt_paths_to_eval = [("Original", args.gt_path)]
+    for name, path in GT_PATHS.items():
+        if path != args.gt_path:
+            gt_paths_to_eval.append((name, path))
+
+    all_results = {}  # {gt_name: [seed_results]}
+
+    for gt_name, gt_path in gt_paths_to_eval:
+        print(f"\n{'#'*60}")
+        print(f"  Phase 2: {args.n_seeds} seeds with best hyperparameters")
+        print(f"  GT Path: {gt_name}")
+        print(f"  ({gt_path})")
+        print(f"{'#'*60}\n")
+
+        # Rebuild dataset with this GT path
+        full_train = build_dataset_with_gt(gt_path)
+        print(f"Rebuilt dataset with {len(full_train)} samples using {gt_name} masks")
+
+        seed_results = []
+        for i in range(args.n_seeds):
+            seed = i
+            print(f"\n--- Seed {seed} ({gt_name}) ---")
+            best_optim, test_acc, best_weights = run_training(
+                seed=seed,
+                lr=bp["lr"],
+                lr2=bp["lr2"],
+                lr2_mult=bp.get("lr2_mult", 1.0),
+                ce_max_w=bp.get("ce_max_w", 1.0),
+                verbose=True,
+            )
+            seed_results.append({
+                "seed": seed,
+                "optim_value": best_optim,
+                "test_acc": test_acc,
+            })
+
+            # Save each seed's model via params_save
+            s = S(args.epochs)
+            s.regularizer_rate = FIXED_KL_LAMBDA
+            s.num_blobs = 0
+            s.seed = seed
+            s.dataset = "Color"
+            s.method = f"GradCAM_Guided_{gt_name}"
+            s.model_weights = best_weights
+            np.random.seed()
+            pid = "".join(["%s" % np.random.randint(0, 9) for _ in range(20)])
+            os.makedirs(model_path, exist_ok=True)
+            pkl.dump(s._dict(), open(os.path.join(model_path, pid + ".pkl"), "wb"))
+            print(f"  Saved model to {os.path.join(model_path, pid + '.pkl')}")
+
+        all_results[gt_name] = seed_results
+
+    # -- Summary ----------------------------------------------------------
+    print(f"\n{'='*60}")
+    print("  FINAL SUMMARY")
+    print(f"{'='*60}")
+    print(f"Best hyperparameters (from trial #{best.number}):")
+    for k, v in bp.items():
+        print(f"  {k}: {v}")
+
+    for gt_name, seed_results in all_results.items():
+        print(f"\n--- {gt_name} GT Path ---")
+        print(f"{'Seed':>6s}  {'Optim':>8s}  {'Test Acc':>10s}")
+        optims = []
+        accs = []
+        for r in seed_results:
+            print(f"{r['seed']:>6d}  {r['optim_value']:>8.4f}  {r['test_acc']:>9.1f}%")
+            optims.append(r["optim_value"])
+            accs.append(r["test_acc"])
+        print(f"  Optim   -- mean: {np.mean(optims):.4f}, std: {np.std(optims):.4f}")
+        print(f"  TestAcc -- mean: {np.mean(accs):.1f}%, std: {np.std(accs):.1f}%")
+
+    # Final comparison table
+    print(f"\n{'='*60}")
+    print("  COMPARISON ACROSS GT PATHS")
+    print(f"{'='*60}")
+    print(f"{'GT Path':<15s}  {'Mean Acc':>10s}  {'Std':>8s}")
+    for gt_name, seed_results in all_results.items():
+        accs = [r["test_acc"] for r in seed_results]
+        print(f"{gt_name:<15s}  {np.mean(accs):>9.1f}%  {np.std(accs):>7.1f}%")

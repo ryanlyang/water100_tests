@@ -1,0 +1,32 @@
+# Optimized R4RR hyperparameters used for final runs.
+# Keys are aligned with runner args/names:
+#   attention_epoch, kl_lambda, base_lr, classifier_lr, lr2_mult
+
+r4rr_optimized_hparams:
+  waterbirds95:
+    attention_epoch: 109
+    kl_lambda: 295.30
+    base_lr: 4.82e-5
+    classifier_lr: 2.93e-3
+    lr2_mult: 0.409
+
+  waterbirds100:
+    attention_epoch: 73
+    kl_lambda: 495.61
+    base_lr: 5.72e-5
+    classifier_lr: 3.57e-3
+    lr2_mult: 0.123
+
+  decoymnist:
+    attention_epoch: 7
+    kl_lambda: 495.61
+    base_lr: 1.00e-3
+    classifier_lr: 1.00e-3
+    lr2_mult: 0.123
+
+  redmeat:
+    attention_epoch: 2
+    kl_lambda: 11.44
+    base_lr: 2.40e-3
+    classifier_lr: 2.33e-4
+    lr2_mult: 1.567

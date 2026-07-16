@@ -1,0 +1,274 @@
+study:
+  id: fcv_vit_waterbirds100_first_study
+  protocol_version: 1
+  dataset: waterbirds100
+  objective: model_selection_under_complete_spatial_shortcut_bias
+
+cluster:
+  name: tigris
+  account: reu-aisocial
+  partition: tigris
+  gres: gpu:gh200:1
+  conda_environment: /home/ryreu/miniforge3-aarch64/envs/fcv_gh200
+  python: /home/ryreu/miniforge3-aarch64/envs/fcv_gh200/bin/python
+  torch_version: 2.11.0+cu130
+  torchvision_version: 0.26.0+cu130
+  timm_version: 1.0.28
+
+paths:
+  repository_root: /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+  data_root: /home/ryreu/guided_cnn/waterbirds/waterbird_1.0_forest2water2
+  metadata: /home/ryreu/guided_cnn/waterbirds/waterbird_1.0_forest2water2/metadata.csv
+  teacher_map_root: /home/ryreu/guided_cnn/Food101/LearningToLook/code/WeCLIPPlus/results_waterbirds100_openclip_laion_dinovit/val/prediction_cmap
+  output_root: /home/ryreu/guided_cnn/logsWaterbird/fcv_vit_waterbirds100_first_study
+
+data:
+  metadata_columns:
+    image_path: img_filename
+    label: y
+    context: place
+    split: split
+  split_values:
+    train: 0
+    original_validation: 1
+    test: 2
+
+  biased_train_holdout:
+    source_split: train
+    train_fraction: 0.80
+    validation_fraction: 0.20
+    split_seed: 0
+    stratify_by: y
+    require_complete_shortcut_correlation: true
+    complete_correlation_check: y_equals_place
+    reuse_identical_indices_for_all_candidates: true
+
+  selector_visibility:
+    vanilla: biased_train_holdout_only
+    fcv: biased_train_holdout_only
+    oracle: original_mixed_validation_only
+    test: evaluation_only
+
+  teacher_maps:
+    source: existing_r4rr_openclip_laion_dinovit
+    format: voc_colormap_class_ids
+    foreground_class_ids:
+      - 1
+    required_for: biased_train_holdout
+    require_complete_coverage_before_training: true
+    normalize_to_unit_interval: true
+    interpolation: nearest
+    spatial_transform: eval_resize_shorter_side_then_center_crop
+
+model:
+  library: timm
+  name: vit_small_patch16_224.augreg_in21k_ft_in1k
+  pretrained: true
+  num_classes: 2
+  image_size: 224
+  patch_size: 16
+  patch_grid_size: 14
+  classification_head: cls_token
+  fine_tune_mode: full
+
+training:
+  optimizer: AdamW
+  learning_rates:
+    - 1.0e-5
+    - 3.0e-5
+    - 1.0e-4
+  weight_decays:
+    - 0.01
+    - 0.05
+    - 0.10
+  seeds:
+    - 0
+    - 1
+    - 2
+  epochs: 20
+  batch_size: 128
+  num_workers: 8
+  precision: amp_bfloat16
+  scheduler:
+    name: cosine
+    warmup_epochs: 2
+    minimum_learning_rate: 0.0
+  augmentation:
+    train_random_resized_crop:
+      enabled: true
+      scale:
+        - 0.80
+        - 1.00
+    train_horizontal_flip_probability: 0.50
+    eval_resize_size: 256
+    mixup: 0.0
+    cutmix: 0.0
+    label_smoothing: 0.0
+    normalization: imagenet
+  evaluate_every_epoch: true
+
+candidate_pool:
+  unit: epoch_checkpoint
+  expected_training_runs: 27
+  expected_candidate_checkpoints: 540
+  persist_all_metric_rows: true
+  checkpoint_retention: all_until_step12_complete_then_prune
+  checkpoint_dtype: float32
+  save_optimizer_state: false
+
+execution:
+  token_bank_batch_size: 128
+  token_bank_num_workers: 8
+  fcv_counterfactual_forward_batch_size: 256
+  control_target_batch_size: 16
+  control_counterfactual_forward_batch_size: 256
+
+fcv:
+  intervention_layer: raw_patch_embeddings_before_position
+  evidence_patch_threshold: 0.60
+  background_patch_threshold: 0.10
+  ambiguous_patch_policy: keep_target
+  minimum_background_patches: 20
+  minimum_eligible_fraction: 0.10
+  minimum_eligible_count_per_class: 20
+  preflight_overlay_count: 20
+  donor_samples_per_image: 5
+  donor_bank:
+    scope: model_specific
+    source: biased_train_holdout_only
+    context_key: class_label_proxy
+    sampling: global_uniform
+    sample_with_replacement: true
+    exclude_target_image: true
+    donor_context: opposite
+    token_positioning: apply_target_position_embedding_after_swap
+  primary_selector:
+    name: equal_weight_original_and_opposite_fcv_accuracy
+    original_accuracy_weight: 0.50
+    counterfactual_accuracy_weight: 0.50
+  selector_analysis:
+    fcv_accuracy_lambdas:
+      - 0.25
+      - 0.50
+      - 1.00
+    control_normalized_lambda: 1.00
+    probability_ratio_epsilon: 1.0e-8
+    oracle_precision: float32
+    oracle_batch_size: 128
+    deterministic_tie_break: candidate_id_ascending
+    exact_ties_only: true
+  secondary_selectors:
+    - biased_validation_accuracy
+    - biased_validation_loss
+    - opposite_context_counterfactual_accuracy
+    - opposite_context_true_class_probability
+    - control_normalized_fcv
+    - oracle_validation_worst_group_accuracy
+    - oracle_validation_balanced_group_accuracy
+  controls:
+    same_context_background_swap: true
+    random_patch_mask_swap: true
+    shuffled_teacher_mask_swap: true
+    evidence_token_swap: true
+    diagnostic_warning_policy:
+      warning_only: true
+      same_minus_opposite_accuracy_min: -0.02
+      opposite_minus_same_confidence_drop_min: -0.02
+      evidence_vs_background_sensitivity_gap_min: -0.02
+
+evaluation:
+  primary_test_metric: worst_group_accuracy
+  secondary_test_metrics:
+    - average_accuracy
+    - balanced_group_accuracy
+    - group_0_0_accuracy
+    - group_0_1_accuracy
+    - group_1_0_accuracy
+    - group_1_1_accuracy
+  selection_metrics:
+    - selection_regret
+    - oracle_gap_closure
+    - spearman_rank_correlation
+    - kendall_tau
+    - top_k_recall
+  test_metrics_must_not_affect_selection: true
+  final_test:
+    precision: float32
+    batch_size: 128
+    evaluate_unique_checkpoints_once: true
+    require_complete_step9_selection: true
+    preserve_selector_order: true
+  gap_closure:
+    metric: test_worst_group_accuracy
+    biased_selector: biased_validation_accuracy
+    fcv_selector: equal_weight_original_and_opposite_fcv_accuracy
+    oracle_selector: oracle_validation_balanced_group_accuracy
+    denominator_epsilon: 1.0e-12
+    clip_fraction: false
+    evaluate_full_pool_posthoc: true
+    full_pool_scores_must_not_affect_selection: true
+  rank_analysis:
+    target_metric: test_worst_group_accuracy
+    fcv_stability_definition: mean_counterfactual_true_class_probability
+    top_k_values:
+      - 1
+      - 5
+      - 10
+      - 25
+    deterministic_tie_break: candidate_id_ascending
+    spearman_rank_method: average
+    kendall_variant: b
+    orient_minimize_scores: true
+    create_scatter_plots: true
+    clustered_bootstrap:
+      enabled: true
+      cluster_column: run_index
+      replicates: 2000
+      seed: 0
+      confidence_level: 0.95
+    posthoc_only: true
+    selectors:
+      - name: biased_validation_accuracy
+        display_name: Biased validation accuracy
+        score_column: biased_val_accuracy
+        direction: maximize
+      - name: biased_validation_loss
+        display_name: Negative biased validation loss
+        score_column: biased_val_loss
+        direction: minimize
+      - name: equal_weight_original_and_opposite_fcv_accuracy
+        display_name: FCV main score
+        score_column: primary_selector_score
+        direction: maximize
+      - name: opposite_context_counterfactual_accuracy
+        display_name: FCV counterfactual accuracy
+        score_column: fcv_counterfactual_accuracy
+        direction: maximize
+      - name: opposite_context_true_class_probability
+        display_name: FCV stability
+        score_column: fcv_true_class_probability
+        direction: maximize
+      - name: oracle_validation_balanced_group_accuracy
+        display_name: Oracle group validation
+        score_column: oracle_validation_balanced_group_accuracy
+        direction: maximize
+
+outputs:
+  candidate_models: candidate_models
+  split_manifests: split_manifests
+  patch_masks: patch_masks
+  token_banks: token_banks
+  fcv_scores: fcv_scores
+  control_scores: control_scores
+  selection_results: selection_results
+  plots: plots
+  run_logs: run_logs
+
+reproducibility:
+  deterministic_holdout: true
+  cache_holdout_indices: true
+  cache_donor_sample_indices: true
+  donor_sampling_seed: 0
+  control_sampling_seed: 1
+  deterministic_algorithms: true
+  cudnn_benchmark: false

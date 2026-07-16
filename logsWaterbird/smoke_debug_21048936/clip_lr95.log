@@ -1,0 +1,26 @@
+/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torchvision/transforms/transforms.py:332: UserWarning: Argument 'interpolation' of type int is deprecated since 0.13 and will be removed in 0.15. Please use InterpolationMode enum.
+  warnings.warn(
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 3682
+NUMBER OF SAMPLES WITH LABEL Waterbird: 1113
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 3498
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 184
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 56
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 1057
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 933
+NUMBER OF SAMPLES WITH LABEL Waterbird: 266
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 467
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 466
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 133
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 133
+WATERBIRDS DIR: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+NUMBER OF SAMPLES WITH LABEL Landbird: 4510
+NUMBER OF SAMPLES WITH LABEL Waterbird: 1284
+NUMBER OF SAMPLES WITH GROUP Land_on_Land: 2255
+NUMBER OF SAMPLES WITH GROUP Land_on_Water: 2255
+NUMBER OF SAMPLES WITH GROUP Water_on_Land: 642
+NUMBER OF SAMPLES WITH GROUP Water_on_Water: 642
+[CLIP-LR] Extracting train features...
+[CLIP-LR] Extracting val features...
+[CLIP-LR] Extracting test features...

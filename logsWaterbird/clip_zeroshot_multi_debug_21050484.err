@@ -1,0 +1,35 @@
+/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torchvision/transforms/transforms.py:332: UserWarning: Argument 'interpolation' of type int is deprecated since 0.13 and will be removed in 0.15. Please use InterpolationMode enum.
+  warnings.warn(
+Traceback (most recent call last):
+  File "/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS/run_clip_zeroshot_waterbirds.py", line 408, in <module>
+    main()
+  File "/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS/run_clip_zeroshot_waterbirds.py", line 320, in main
+    text_features = _build_text_features(
+  File "/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS/run_clip_zeroshot_waterbirds.py", line 195, in _build_text_features
+    feats = model.encode_text(tokens).float()
+  File "/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS/CLIP/clip/model.py", line 354, in encode_text
+    x = self.transformer(x)
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1130, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS/CLIP/clip/model.py", line 209, in forward
+    return self.resblocks(x)
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1130, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torch/nn/modules/container.py", line 139, in forward
+    input = module(input)
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1130, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS/CLIP/clip/model.py", line 196, in forward
+    x = x + self.attention(self.ln_1(x))
+  File "/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS/CLIP/clip/model.py", line 192, in attention
+    return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask, attention_probs_forward_hook=self.set_attn_probs,
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1130, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS/CLIP/clip/auxilary.py", line 415, in forward
+    return multi_head_attention_forward(
+  File "/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS/CLIP/clip/auxilary.py", line 252, in multi_head_attention_forward
+    attn_output_weights.register_hook(attention_probs_backwards_hook)
+  File "/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torch/_tensor.py", line 430, in register_hook
+    raise RuntimeError("cannot register a hook on a tensor that "
+RuntimeError: cannot register a hook on a tensor that doesn't require gradient
+srun: error: skl-a-48: task 0: Exited with exit code 1

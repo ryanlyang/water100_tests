@@ -1,0 +1,117 @@
+# Optimized hyperparameters and best trial summaries for Waterbirds95.
+# Values are transcribed from finalized sweep logs.
+
+waterbirds95_optimized_hparams:
+  vanilla:
+    base_lr: 0.010670285966035751
+    classifier_lr: 0.0005167213151701126
+    momentum: 0.9187602995212563
+
+  abn:
+    base_lr: 0.01003187525820913
+    classifier_lr: 7.25437836215674e-05
+    abn_cls_weight: 2.617728751833586
+
+  upweight:
+    base_lr: 0.013011143106374497
+    classifier_lr: 0.00034233257609501744
+
+  clip_lr:
+    c: 30.481669053249504
+
+  afr:
+    gamma: 11.0
+    reg: 0.0
+    best_val_wga: 0.9229
+    best_test_at_val: 0.9149
+
+  elrep:
+    base_lr: 0.019630442695504173
+    classifier_lr: 7.267191608584487e-05
+    theta1: 3.332582224436613e-05
+    theta2: 1.8101732764960995e-05
+
+  gals_rrr_rn50_maps:
+    base_lr: 0.022040465005914615
+    classifier_lr: 0.0003017377081829659
+    grad_weight: 24143.93955532796
+    grad_criterion: L2
+
+  gals_rrr_vit_maps:
+    base_lr: 0.008483345748827318 
+    classifier_lr: 0.0009044122656322206
+    grad_weight: 13680.095279726915 
+    grad_criterion: L1
+
+  gals_abn_vit_maps:
+    base_lr: 0.01732142279666017
+    classifier_lr: 0.0006429915820952152
+    abn_att_weight: 0.016656101052054992
+
+  gals_gradcam_vit_maps:
+    base_lr: 0.011844604751496369
+    classifier_lr: 0.00011801860051989941
+    cam_weight: 0.01003746613538941
+
+  gals_our_masks:
+    base_lr: 0.015122123432341057
+    classifier_lr: 0.0005284097040082973
+    grad_weight: 1438.787318824726
+    grad_criterion: L2
+
+  r4rr_gals_rn50_maps:
+    attention_epoch: 40
+    kl_lambda: 353.46489867498144
+    base_lr: 5.2169911034158515e-05
+    classifier_lr: 0.005771448765735708
+    lr2_mult: 0.23559163968748784
+
+  r4rr_gals_vit_maps:
+    attention_epoch: 16
+    kl_lambda: 12.391644602752761
+    base_lr: 0.014120855447229791
+    classifier_lr: 0.005397102257029752
+    lr2_mult: 0.7457011484690286
+
+  r4rr_optimized:
+    attention_epoch: 109
+    kl_lambda: 295.30
+    base_lr: 4.82e-5
+    classifier_lr: 2.93e-3
+    lr2_mult: 0.409
+
+  r4rr_vit_lgmstyle:
+    attention_epoch: 26
+    kl_lambda: 5.421857603997285
+    base_lr: 5.48655472057427e-05
+    classifier_lr: 0.04483749853510187
+    lr2_mult: 1.0
+
+  vit_erm:
+    base_lr: 0.0002620225546334945
+    classifier_lr: 0.008483345748827318
+    momentum: 0.9028894919752904
+
+  r4rr_mobilenetv2:
+    attention_epoch: 176
+    kl_lambda: 3.7757089552096077
+    base_lr: 0.007826268798247467
+    classifier_lr: 0.00869445437186419
+    lr2_mult: 1.136312561622593
+
+  mobilenetv2_erm:
+    base_lr: 0.009037817298961128
+    classifier_lr: 0.0005093288991452603
+    momentum: 0.9280529176286455
+
+  r4rr_invert:
+    attention_epoch: 38
+    kl_lambda: 1.3848179138470018
+    base_lr: 0.002864673705012986
+    classifier_lr: 1.0252393978291112e-05
+    lr2_mult: 0.9726526928253113
+
+  r4rr_joint:
+    kl_lambda: 103.49228611349159
+    base_lr: 0.0001260781865242534
+    classifier_lr: 0.0003636273607591222

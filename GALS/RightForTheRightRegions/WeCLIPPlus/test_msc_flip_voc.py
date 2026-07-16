@@ -1,0 +1,248 @@
+import argparse
+import os
+import sys
+sys.path.append(".")
+from utils.dcrf import DenseCRF
+from utils.imutils import encode_cmap
+import numpy as np
+import torch
+import torch.nn.functional as F
+from omegaconf import OmegaConf
+from tqdm import tqdm
+from datasets import voc
+from utils import evaluate
+from WeCLIP_Plus.model_attn_aff_voc import WeCLIP_Plus
+import imageio.v2 as imageio
+from torch.utils.data import Subset
+
+# torch.backends.cudnn.enabled = False
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--config",
+                    default='configs/voc_attn_reg.yaml',
+                    type=str,
+                    help="config")
+parser.add_argument("--work_dir", default="results", type=str, help="work_dir")
+parser.add_argument("--bkg_score", default=0.45, type=float, help="bkg_score")
+parser.add_argument("--eval_set", default="val", type=str, help="eval_set") #val
+parser.add_argument("--model_path", default="/data1/zbf_data/FinalCodeGithub/WeCLIP_final_version/WeCLIP+/scripts/work_dir_voc/checkpoints/2025-03-11-10-47/wetr_iter_30000.pth", type=str, help="model_path")
+parser.add_argument(
+    "--chunk_size",
+    default=None,
+    type=int,
+    help="If set, run inference in chunks of this many images"
+)
+args = parser.parse_args([])
+
+def _make_crf_post_processor():
+    return DenseCRF(
+        iter_max=10,
+        pos_xy_std=3,
+        pos_w=3,
+        bi_xy_std=64,
+        bi_rgb_std=5,
+        bi_w=4,
+    )
+
+
+def _save_crf_prediction_cmap(name, msc_logits, images_root, post_processor):
+    image_name = os.path.join(images_root, name + ".jpg")
+    image = imageio.imread(image_name).astype(np.float32)
+
+    if image.ndim == 2:
+        image = np.stack([image, image, image], axis=-1)
+
+    h, w, _ = image.shape
+    logits = msc_logits.detach().cpu()
+    logits = F.interpolate(logits, size=(h, w), mode="bilinear", align_corners=False)
+    prob = F.softmax(logits, dim=1)[0].numpy()
+    prob = post_processor(image.astype(np.uint8), prob)
+    pred = np.argmax(prob, axis=0).astype(np.uint8)
+
+    imageio.imsave(
+        os.path.join(args.work_dir, "prediction_cmap", name + ".png"),
+        encode_cmap(pred).astype(np.uint8),
+    )
+
+
+def validate(model, dataset, cfg, test_scales=None):
+    
+
+    _preds, _gts, _msc_preds, cams = [], [], [], []
+    
+    default_workers = 2
+    cpu_count = os.cpu_count() or 1
+    eval_workers = default_workers
+    eval_workers_env = os.environ.get("WECLIP_EVAL_NUM_WORKERS")
+    if eval_workers_env is not None:
+        try:
+            eval_workers = int(eval_workers_env)
+        except ValueError:
+            print(
+                f"WARNING: invalid WECLIP_EVAL_NUM_WORKERS={eval_workers_env!r}; "
+                f"using default {default_workers}"
+            )
+            eval_workers = default_workers
+    eval_workers = max(1, min(eval_workers, cpu_count))
+
+    data_loader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=eval_workers,
+        pin_memory=False,
+    )
+    model.cuda()
+    model.eval()
+
+    num = 0
+
+    _preds_hist = np.zeros((21, 21))
+    _msc_preds_hist = np.zeros((21, 21))
+    _cams_hist = np.zeros((21, 21))
+    images_root = os.path.join(cfg.dataset.root_dir, "JPEGImages")
+    post_processor = _make_crf_post_processor()
+
+    for idx, data in tqdm(enumerate(data_loader), total=len(data_loader), ncols=100, ascii=" >="):
+        num+=1
+
+        name, inputs, labels, cls_labels = data
+        names = name+name
+
+        inputs = inputs.cuda()
+        labels = labels.cuda()
+
+        _, _, h, w = inputs.shape
+        ratio = cfg.clip_init.resize_long / max(h,w)
+        _h, _w = int(h*ratio), int(w*ratio)
+        inputs = F.interpolate(inputs, size=(_h, _w), mode='bilinear', align_corners=False)
+
+        segs_list = []
+        inputs_cat = torch.cat([inputs, inputs.flip(-1)], dim=0)
+        segs_clip_cat, segs_dino_cat, cam, attn_loss = model(inputs_cat, names, mode = 'val')
+        torch.cuda.empty_cache()
+
+        segs_cat = 0.5 * segs_dino_cat + 0.5*segs_clip_cat
+        
+        cam = cam[0].unsqueeze(0)
+        segs = segs_cat[0].unsqueeze(0)
+
+        _segs = (segs_cat[0,...] + segs_cat[1,...].flip(-1)) / 2
+        segs_list.append(_segs)
+
+        _, _, s_h, s_w = segs_cat.shape
+
+        for s in test_scales:
+            if s != 1.0:
+                _inputs = F.interpolate(inputs, scale_factor=s, mode='bilinear', align_corners=False)
+                inputs_cat = torch.cat([_inputs, _inputs.flip(-1)], dim=0)
+
+                segs_clip_cat, segs_dino_cat, cam_cat, attn_loss = model(inputs_cat, names, mode='val')
+                torch.cuda.empty_cache()
+
+                segs_cat = 0.5* segs_dino_cat + 0.5*segs_clip_cat
+
+                _segs_cat = F.interpolate(segs_cat, size=(s_h, s_w), mode='bilinear', align_corners=False)
+                _segs = (_segs_cat[0,...] + _segs_cat[1,...].flip(-1)) / 2
+                segs_list.append(_segs)
+
+        msc_segs = torch.mean(torch.stack(segs_list, dim=0), dim=0).unsqueeze(0)
+        
+        resized_segs = F.interpolate(segs, size=labels.shape[1:], mode='bilinear', align_corners=False)
+        seg_preds = torch.argmax(resized_segs, dim=1)
+        print('seg_shape', seg_preds.shape, 'labels', labels.shape, 'cam', cam.shape)
+
+        resized_msc_segs = F.interpolate(msc_segs, size=labels.shape[1:], mode='bilinear', align_corners=False)
+        msc_seg_preds = torch.argmax(resized_msc_segs, dim=1)
+
+        cams += list(cam.cpu().numpy().astype(np.int16))
+        _preds += list(seg_preds.cpu().numpy().astype(np.int16))
+        _msc_preds += list(msc_seg_preds.cpu().numpy().astype(np.int16))
+        _gts += list(labels.cpu().numpy().astype(np.int16))
+
+
+        if num % 1000 == 0:
+            _preds_hist, seg_score = evaluate.scores(_gts, _preds, _preds_hist)
+            _msc_preds_hist, msc_seg_score = evaluate.scores(_gts, _msc_preds, _msc_preds_hist)
+            _cams_hist, cam_score = evaluate.scores(_gts, cams, _cams_hist)
+            _preds, _gts, _msc_preds, cams = [], [], [], []
+
+
+        _save_crf_prediction_cmap(
+            name=name[0],
+            msc_logits=msc_segs,
+            images_root=images_root,
+            post_processor=post_processor,
+        )
+            
+    return _gts, _preds, _msc_preds, cams, _preds_hist, _msc_preds_hist, _cams_hist
+
+
+def main(cfg, model_path):
+    
+    val_dataset = voc.VOC12SegDataset(
+        root_dir=cfg.dataset.root_dir,
+        name_list_dir=cfg.dataset.name_list_dir,
+        split=args.eval_set,
+        stage='val',
+        aug=False,
+        ignore_index=cfg.dataset.ignore_index,
+        num_classes=cfg.dataset.num_classes,
+    )
+
+    clip_pretrained = cfg.clip_init.get("clip_pretrained", None)
+    model = WeCLIP_Plus(num_classes=cfg.dataset.num_classes,
+                     clip_model=cfg.clip_init.clip_pretrain_path,
+                     clip_pretrained=clip_pretrained,
+                     dino_model=cfg.dino_init.dino_model,
+                     dino_fts_dim=cfg.dino_init.dino_fts_fuse_dim,
+                     decoder_layers=cfg.dino_init.decoder_layer,
+                     embedding_dim=cfg.clip_init.embedding_dim,
+                     in_channels=cfg.clip_init.in_channels,
+                     dataset_root_path=cfg.dataset.root_dir,
+                     clip_flag=cfg.clip_init.clip_flag,
+                     device='cuda')
+    
+    trained_state_dict = torch.load(model_path, map_location="cpu")
+
+    model.load_state_dict(state_dict=trained_state_dict, strict=False)
+    model.eval()
+
+   
+    gts, preds, msc_preds, cams, preds_hist, msc_preds_hist, cams_hist = validate(model=model, dataset=val_dataset, cfg=cfg, test_scales=[1, 1.5]) #[1, 0.75] [1, 1.5]
+    #[0.75, 1.0, 1.25, 1.5]
+    torch.cuda.empty_cache()
+
+    preds_hist, seg_score = evaluate.scores(gts, preds, preds_hist)
+    msc_preds_hist, msc_seg_score = evaluate.scores(gts, msc_preds, msc_preds_hist)
+    cams_hist, cam_score = evaluate.scores(gts, cams, cams_hist)
+
+    print("cams score:")
+    print(cam_score)
+    print("segs score:")
+    print(seg_score)
+    print("msc segs score:")
+    print(msc_seg_score)
+
+    return True
+
+
+def outer_main(model_path, config_path=None, cfg_override=None):
+
+    if cfg_override is not None:
+        cfg = cfg_override
+    else:
+        if config_path is None:
+            config_path = args.config  # default from parser
+        cfg = OmegaConf.load(config_path)
+
+
+    args.work_dir = os.path.join(args.work_dir, args.eval_set)
+
+    os.makedirs(args.work_dir + "/prediction_cmap", exist_ok=True)
+
+    main(cfg, model_path)
+
+
+if __name__ == '__main__':
+    outer_main()

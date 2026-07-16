@@ -1,0 +1,37 @@
+/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and will be removed in 0.15, please use 'weights' instead.
+  warnings.warn(
+/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and will be removed in 0.15. The current behavior is equivalent to passing `weights=ResNet50_Weights.IMAGENET1K_V1`. You can also use `weights=ResNet50_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+
+=== RUN (GALS ViT GT): kl_lambda=1.0, attention_epoch=0 ===
+*** Attention epoch 0 reached: restarting optimizer (lr2_mult=1.0, base_lr=9.999999999999991e-05, classifier_lr=0.0010000000000000002) ***
+Epoch 1/1
+train Loss: 0.4520 Acc: 0.8997 Attn_Loss: 0.1589
+val Loss: 0.6034 Acc: 0.6939 Attn_Loss: 0.0000
+val Balanced Acc: 0.6129
+val Optim Num: 0.6129
+
+Training complete in 0m 13s
+
+[VAL] Best Balanced Acc: 0.6129 at epoch 0
+
+[TEST] Loss: 0.6100  Acc: 69.66%
+[TEST] Per-group Acc: 61.60%  Worst-group: 8.88%
+[SWEEP] Trial 0 done. best_balanced_val_acc=0.6129
+[SWEEP] Best trial:
+  trial: 0
+  attention_epoch: 0
+  kl_lambda: 1.0
+  kl_incr: 0.1
+  base_lr: 9.999999999999991e-05
+  classifier_lr: 0.0010000000000000002
+  lr2_mult: 1.0
+  best_balanced_val_acc: 0.6129082033441814
+  test_acc: 69.65826717293753
+  per_group: 61.59688404445641
+  worst_group: 8.878504672897195
+  checkpoint: None
+  sampler: random
+  seconds: 23
+[TIME] sweep: median min/trial=0.3833 | total tuning GPU-hours=0.0064
+[TIME] sweep: median min/epoch=0.3833 (epochs/trial=1)

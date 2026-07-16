@@ -1,0 +1,2 @@
+trial,attention_epoch,kl_lambda,kl_incr,base_lr,classifier_lr,lr2_mult,best_balanced_val_acc,test_acc,per_group,worst_group,checkpoint,sampler,seconds
+0,0,1.0,0.1,9.999999999999991e-05,0.0010000000000000002,1.0,0.6376592606919227,74.99137038315499,63.79701390471849,8.09968847352025,,random,22

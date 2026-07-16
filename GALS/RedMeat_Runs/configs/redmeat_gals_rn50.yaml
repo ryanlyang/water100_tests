@@ -1,0 +1,36 @@
+DATA:
+  DATASET: "food_subset"
+  NUM_CLASSES: 5
+  CLASSES: ['prime_rib', 'pork_chop', 'steak', 'baby_back_ribs', 'filet_mignon']
+  SPLIT: 'split'
+  FOOD_SUBSET_DIR: 'food-101-redmeat'
+  BATCH_SIZE: 96
+  ATTENTION_DIR: "clip_rn50_attention_gradcam"
+
+EXP:
+  APPROACH: "generic"
+  MODEL: "resnet50"
+  PRETRAINED: True
+
+  LOSSES:
+    CLASSIFICATION:
+      WEIGHT: 1
+    GRADIENT_OUTSIDE:
+      COMPUTE: True
+      LOG: False
+      WEIGHT: 10000
+      CRITERION: "L1"
+      GT: "clip_rn50"
+      COMBINE_ATT_MODE: "average_nonzero"
+
+  NUM_EPOCHS: 150
+  OPTIMIZER: "SGD"
+  WEIGHT_DECAY: 1e-5
+  MOMENTUM: 0.9
+  SCHEDULER: "NONE"
+
+  BASE:
+    LR: 0.005
+
+  CLASSIFIER:
+    LR: 0.0001

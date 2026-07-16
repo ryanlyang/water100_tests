@@ -1,0 +1,114 @@
+# Optimized hyperparameters and best trial summaries for RedMeat.
+# Values are transcribed from finalized sweep logs.
+
+redmeat_optimized_hparams:
+  vanilla:
+    base_lr: 0.0016966944834563556
+    classifier_lr: 0.001036350233934804
+
+  abn:
+    base_lr: 0.006162827507797648
+    classifier_lr: 0.00037743153141157697
+    abn_cls_weight: 0.606716656420794
+
+  upweight:
+    base_lr: 0.0021504262326653436
+    classifier_lr: 0.0016660124273211814
+
+  clip_lr:
+    c: 1.329346323656201
+
+  afr:
+    gamma: 13.5
+    reg: 0.1
+    best_val_wga: 0.5320
+    best_test_at_val: 0.5600
+
+  elrep:
+    base_lr: 0.002381123051117795
+    classifier_lr: 1.0449032698523769e-05
+    theta1: 9.521567541537433e-05
+    theta2: 1.4275756893065589e-05
+
+  gals_rrr_rn50_maps:
+    base_lr: 0.00023833918106007227
+    classifier_lr: 2.446109613251567e-05
+    grad_weight: 14980.909916459295
+    grad_criterion: L1
+
+  gals_rrr_vit_maps:
+    base_lr: 0.0001626603363687077
+    classifier_lr: 2.5961178117275155e-05
+    grad_weight: 13374.682497120111
+    grad_criterion: L1
+
+  gals_abn_vit_maps:
+    base_lr: 0.007203791420251967
+    classifier_lr: 0.00018332753693291344
+    abn_att_weight: 18.70360291165618
+
+  gals_gradcam_vit_maps:
+    base_lr: 0.006440079741460147
+    classifier_lr: 0.0004251610658278016
+    cam_weight: 6.05708650532269
+
+  gals_our_masks:
+    base_lr: 9.734963469259212e-05
+    classifier_lr: 0.0001615599778885924
+    grad_weight: 39063.958555144236
+    grad_criterion: L1
+
+  r4rr_gals_rn50_maps:
+    attention_epoch: 3
+    kl_lambda: 4.912333384753617
+    kl_incr: 0.0
+    base_lr: 0.006381797047254218
+    classifier_lr: 2.0203736488217735e-05
+    lr2_mult: 0.4416134776491354
+    best_balanced_val_acc: 0.6719999999999999
+    test_acc: 70.72
+    per_group: 70.72
+    worst_group: 60.4
+
+  r4rr_gals_vit_maps:
+    attention_epoch: 87
+    kl_lambda: 1.0264403149342938
+    kl_incr: 0.0
+    base_lr: 0.0009808332579678747
+    classifier_lr: 1.33849285813149e-05
+    lr2_mult: 0.4550759184149428
+    best_balanced_val_acc: 0.6592
+    test_acc: 68.56
+    per_group: 68.56000000000002
+    worst_group: 52.400000000000006
+
+  r4rr_optimized:
+    attention_epoch: 2
+    kl_lambda: 11.44
+    base_lr: 2.40e-3
+    classifier_lr: 2.33e-4
+    lr2_mult: 1.567
+
+  r4rr_vit_lgmstyle:
+    attention_epoch: 97
+    kl_lambda: 17.882370346219354
+    base_lr: 0.00031577478613513036
+    classifier_lr: 0.012794789837853385
+    lr2_mult: 0.8401970664045666
+
+  vit_erm:
+    base_lr: 0.00010889412366851132
+    classifier_lr: 0.0006047233305652243
+    momentum: 0.8815357624514035
+
+  r4rr_mobilenetv2:
+    attention_epoch: 71
+    kl_lambda: 43.53
+    base_lr: 0.00216
+    classifier_lr: 0.00262
+    lr2_mult: 0.849
+
+  mobilenetv2_erm:
+    base_lr: 0.002798860574410339
+    classifier_lr: 2.6678559411334764e-05
+    momentum: 0.9168142621559325

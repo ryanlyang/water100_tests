@@ -1,0 +1,10 @@
+[Thu Feb 12 05:39:56 PM EST 2026] Host: skl-a-48.rc.rit.edu
+Repo: /var/spool/slurmd/job21050482
+CLIP model: RN50
+Seeds: 0,1,2,3,4
+Splits: val,test
+RUN_WB95=1 RUN_WB100=1 RUN_REDMEAT=1
+/home/ryreu/miniconda3/envs/gals_a100/bin/python
+\n=== [ZERO-SHOT] WATERBIRDS95 ===
+Data: /home/ryreu/guided_cnn/waterbirds/waterbird_complete95_forest2water2
+Output: /home/ryreu/guided_cnn/logsWaterbird/clip_zeroshot_wb95_21050482.csv

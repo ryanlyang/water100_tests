@@ -1,0 +1,38 @@
+/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and will be removed in 0.15, please use 'weights' instead.
+  warnings.warn(
+/home/ryreu/miniconda3/envs/gals_a100/lib/python3.8/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and will be removed in 0.15. The current behavior is equivalent to passing `weights=ResNet50_Weights.IMAGENET1K_V1`. You can also use `weights=ResNet50_Weights.DEFAULT` to get the most up-to-date weights.
+  warnings.warn(msg)
+
+=== RUN: model=resnet50 epochs=1 lr=0.0010000000000000002 momentum=0.9 wd=9.999999999999997e-06 nesterov=False seed=0 ===
+Epoch 1/1
+train Loss: 0.2891 Acc: 0.8845 Balanced Acc: 0.7859
+val Loss: 0.5329 Acc: 0.7581 Balanced Acc: 0.6699
+Training complete in 0m 12s
+
+[VAL] Best Balanced Acc: 0.6699 at epoch 0
+
+[TEST] Loss: 0.5204  Acc: 75.35%
+[TEST] Land_on_Land: 99.73%
+[TEST] Land_on_Water: 66.03%
+[TEST] Water_on_Land: 12.15%
+[TEST] Water_on_Water: 85.67%
+[TEST] Per Group: 65.90%  Worst Group: 12.15%
+[RUN DONE] Checkpoint saving disabled via SAVE_CHECKPOINTS=0
+[RUN DONE] best_balanced_val_acc=0.6699 | test_acc=75.35% | saved: NONE
+[SWEEP] Trial 0 done. best_balanced_val_acc=0.6699
+[SWEEP] Best trial:
+  trial: 0
+  lr: 0.0010000000000000002
+  weight_decay: 9.999999999999997e-06
+  momentum: 0.9
+  nesterov: False
+  best_balanced_val_acc: 0.6698941888483265
+  test_acc: 75.3538142906455
+  per_group: 65.89607034558026
+  worst_group: 12.149532710280374
+  checkpoint: NONE
+  sampler: random
+  seconds: 29
+[POST] Running best hyperparameters on 0 seeds...
+[TIME] sweep: median min/trial=0.4833 | total tuning GPU-hours=0.0081
+[TIME] sweep: median min/epoch=0.4833 (epochs/trial=1)
