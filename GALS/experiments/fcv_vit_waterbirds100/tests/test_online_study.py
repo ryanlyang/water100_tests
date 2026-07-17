@@ -58,6 +58,7 @@ from fcv.online_study import (
     _local_winners,
     _prepare_online_intervention_plans,
     _prune_retention,
+    _restore_committed_test_index,
     _restore_rng_state,
     _run_epoch,
     _stage_retention,
@@ -1006,6 +1007,9 @@ class OnlineStudyRetentionTests(unittest.TestCase):
                         "learning_rate": run.learning_rate,
                         "weight_decay": run.weight_decay,
                         "checkpoint_sha256": str(epoch) * 64,
+                        "epoch_online_total_seconds": 103.24284672737122 + epoch,
+                        "test_loss": 0.5404522890791016 + epoch * 1.0e-8,
+                        "test_accuracy": 0.7649292371418709,
                         "per_image_path": f"per-image-{epoch}.csv",
                         "per_image_sha256": "a" * 64,
                         "summary_path": f"summary-{epoch}.json",
@@ -1015,23 +1019,37 @@ class OnlineStudyRetentionTests(unittest.TestCase):
                 return row
 
             _append_test_index_row(path, run, 0, test_row(1))
+            committed_sha256 = _sha256(path)
+            committed_size = path.stat().st_size
+            committed_bytes = path.read_bytes()
             # Simulate a crash after writing the next analysis-only row but
             # before committing the optimizer-bearing resume state.
-            interrupted = pd.concat(
-                [pd.read_csv(path), pd.DataFrame([test_row(2)])], ignore_index=True
-            )
-            interrupted.to_csv(path, index=False)
-            prefix = _test_index_prefix(
-                path, run, 1, allow_one_uncommitted_row=True
+            _append_test_index_row(path, run, 1, test_row(2))
+            self.assertTrue(path.read_bytes().startswith(committed_bytes))
+            prefix = _restore_committed_test_index(
+                path,
+                run,
+                1,
+                expected_sha256=committed_sha256,
+                expected_size_bytes=committed_size,
             )
             self.assertEqual(prefix["candidate_id"].tolist(), [run.candidate_id(1)])
-            prefix.to_csv(path, index=False)
+            self.assertEqual(path.read_bytes(), committed_bytes)
             _append_test_index_row(path, run, 1, test_row(2))
             recovered = pd.read_csv(path)
             self.assertEqual(
                 recovered["candidate_id"].tolist(),
                 [run.candidate_id(1), run.candidate_id(2)],
             )
+            two_row_bytes = path.read_bytes()
+            _restore_committed_test_index(
+                path,
+                run,
+                2,
+                expected_sha256=_sha256(path),
+                expected_size_bytes=path.stat().st_size,
+            )
+            self.assertEqual(path.read_bytes(), two_row_bytes)
 
             with self.assertRaises(OnlineStudyError):
                 _test_index_prefix(path, run, 0, allow_one_uncommitted_row=True)

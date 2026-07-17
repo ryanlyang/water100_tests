@@ -154,6 +154,65 @@ def _test_index_prefix(
     return prefix
 
 
+def _restore_committed_test_index(
+    path: Path,
+    run: SweepRun,
+    committed_epochs: int,
+    *,
+    expected_sha256: str,
+    expected_size_bytes: int,
+) -> pd.DataFrame:
+    """Validate or byte-truncate one uncommitted row without CSV reserialization."""
+
+    prefix = _test_index_prefix(
+        path,
+        run,
+        committed_epochs,
+        allow_one_uncommitted_row=True,
+    )
+    observed_rows = len(pd.read_csv(path))
+    expected_size_bytes = int(expected_size_bytes)
+    if len(expected_sha256) != 64 or expected_size_bytes <= 0:
+        raise OnlineStudyError("Resume has no valid analysis-only index byte binding.")
+    if observed_rows == committed_epochs:
+        if (
+            path.stat().st_size != expected_size_bytes
+            or _sha256_file(path) != expected_sha256
+        ):
+            raise OnlineStudyError(
+                "Committed analysis-only test index bytes changed."
+            )
+        return prefix
+
+    # A crash may leave exactly one analysis-only row written after the last
+    # optimizer-bearing resume commit. The resume stores the committed byte
+    # length and hash, so remove the suffix byte-for-byte. Never parse and
+    # rewrite committed float text: pandas round trips are not byte-stable
+    # across all supported builds.
+    payload = path.read_bytes()
+    if expected_size_bytes >= len(payload):
+        raise OnlineStudyError(
+            "Uncommitted analysis-only row has no recoverable byte suffix."
+        )
+    committed = payload[:expected_size_bytes]
+    if hashlib.sha256(committed).hexdigest() != expected_sha256:
+        raise OnlineStudyError(
+            "Analysis-only test index committed byte prefix changed."
+        )
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_bytes(committed)
+    temporary.replace(path)
+    restored = _test_index_prefix(
+        path,
+        run,
+        committed_epochs,
+        allow_one_uncommitted_row=False,
+    )
+    if path.stat().st_size != expected_size_bytes or _sha256_file(path) != expected_sha256:
+        raise OnlineStudyError("Analysis-only test index byte rollback failed.")
+    return restored
+
+
 def _append_test_index_row(
     path: Path,
     run: SweepRun,
@@ -162,17 +221,25 @@ def _append_test_index_row(
 ) -> None:
     """Append one post-hoc row without carrying prior test metrics into training."""
 
-    frame = _test_index_prefix(
+    _test_index_prefix(
         path,
         run,
         committed_epochs,
         allow_one_uncommitted_row=False,
     )
     incoming = pd.DataFrame([dict(row)], columns=ONLINE_TEST_COLUMNS)
-    updated = incoming if frame.empty else pd.concat(
-        [frame, incoming], ignore_index=True
-    )
-    _atomic_csv(updated, path)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    if committed_epochs == 0:
+        incoming.to_csv(temporary, index=False)
+    else:
+        committed = path.read_bytes()
+        if not committed.endswith(b"\n"):
+            raise OnlineStudyError(
+                "Committed analysis-only test index has no row boundary."
+            )
+        temporary.write_bytes(committed)
+        incoming.to_csv(temporary, mode="a", header=False, index=False)
+    temporary.replace(path)
 
 
 def _manifest_hashes(
@@ -1133,14 +1200,17 @@ def train_and_score_online_run(
         )
         if _sha256_file(validation_path) != resume.get("validation_metrics_sha256"):
             raise OnlineStudyError("Committed validation index does not reproduce.")
-        test_prefix = _test_index_prefix(
+        _restore_committed_test_index(
             test_path,
             run,
             completed_epoch,
-            allow_one_uncommitted_row=True,
+            expected_sha256=str(
+                resume.get("analysis_only_test_metrics_sha256", "")
+            ),
+            expected_size_bytes=int(
+                resume.get("analysis_only_test_metrics_size_bytes", -1)
+            ),
         )
-        _atomic_csv(test_prefix, test_path)
-        del test_prefix
         if (
             int(resume.get("analysis_only_test_row_count", -1)) != completed_epoch
             or _sha256_file(test_path)
@@ -1389,6 +1459,7 @@ def train_and_score_online_run(
                 "validation_metrics_sha256": _sha256_file(validation_path),
                 "analysis_only_test_row_count": epoch,
                 "analysis_only_test_metrics_sha256": _sha256_file(test_path),
+                "analysis_only_test_metrics_size_bytes": test_path.stat().st_size,
                 "retention_state_sha256": _sha256_file(retention_path),
                 "test_metric_values_stored_in_resume_state": False,
             }

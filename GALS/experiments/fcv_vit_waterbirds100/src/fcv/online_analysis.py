@@ -1776,6 +1776,8 @@ def validate_online_run_prefix(
         or len(resume.get("validation_rows", [])) != expected_epoch
         or resume.get("validation_metrics_sha256") != _sha256_file(validation_path)
         or resume.get("analysis_only_test_metrics_sha256") != _sha256_file(test_path)
+        or int(resume.get("analysis_only_test_metrics_size_bytes", -1))
+        != test_path.stat().st_size
     ):
         raise OnlineAnalysisError("Online smoke resume commit is stale or leaky.")
     if require_resumed_from_epoch is not None and int(
