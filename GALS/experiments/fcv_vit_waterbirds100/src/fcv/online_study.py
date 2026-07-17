@@ -58,8 +58,14 @@ from .candidate_training import (
 )
 from .config import candidate_epochs
 from .campaign_provenance import load_campaign_provenance_receipt
-from .controls import CONTROL_NAMES, prepare_control_plan, score_candidate_controls
+from .controls import (
+    CONTROL_NAMES,
+    FCVControlError,
+    prepare_control_plan,
+    score_candidate_controls,
+)
 from .fcv_scoring import (
+    FCVScoringError,
     load_background_bank,
     prepare_opposite_donor_plan,
     score_candidate_fcv,
@@ -320,12 +326,17 @@ def _prepare_online_intervention_plans(
     donor_plan_path: Path,
     control_plan_path: Path,
 ) -> None:
-    """Create either missing plan without coupling their commit boundaries."""
+    """Validate or create the deterministic intervention-plan pair.
+
+    Plans survive ordinary epoch-to-epoch checkpoint replacement, but they may
+    predate the current campaign after a bounded restart.  Always validate an
+    existing pair against the current training fingerprint and source/bank
+    layout.  Before selection begins it is safe to replace a stale pair because
+    both plans are deterministic functions of those locked inputs and seeds.
+    """
 
     donor_missing = not donor_plan_path.is_file()
     control_missing = not control_plan_path.is_file()
-    if not donor_missing and not control_missing:
-        return
     banks = {
         label: load_background_bank(
             config,
@@ -337,21 +348,44 @@ def _prepare_online_intervention_plans(
         )
         for label, context_name in CONTEXT_NAMES.items()
     }
-    donor_plan = prepare_opposite_donor_plan(
-        config, token_source, banks, donor_plan_path
-    )
-    prepare_control_plan(
-        config,
-        token_source,
-        banks,
-        donor_plan,
-        donor_plan_path,
-        control_plan_path,
-        # If the donor artifact itself vanished, rebuild its dependent control
-        # plan as a deterministic pair. In the ordinary interrupted case the
-        # donor exists and only the missing control plan is created.
-        overwrite=donor_missing and control_plan_path.is_file(),
-    )
+    try:
+        donor_plan = prepare_opposite_donor_plan(
+            config, token_source, banks, donor_plan_path
+        )
+        prepare_control_plan(
+            config,
+            token_source,
+            banks,
+            donor_plan,
+            donor_plan_path,
+            control_plan_path,
+            # If the donor artifact itself vanished, rebuild its dependent
+            # control plan as a deterministic pair.
+            overwrite=donor_missing and control_plan_path.is_file(),
+        )
+    except (
+        FCVScoringError,
+        FCVControlError,
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+    ):
+        # A pre-selection bounded restart can encounter plans from an older
+        # source tree/campaign. Recreate both atomically-written artifacts from
+        # the current locked inputs instead of failing later in score_candidate.
+        donor_plan = prepare_opposite_donor_plan(
+            config, token_source, banks, donor_plan_path, overwrite=True
+        )
+        prepare_control_plan(
+            config,
+            token_source,
+            banks,
+            donor_plan,
+            donor_plan_path,
+            control_plan_path,
+            overwrite=True,
+        )
     del banks, donor_plan
 
 
@@ -868,6 +902,15 @@ def _invalidate_completed_run_for_bounded_repair(
             path.unlink()
     for path in (run_dir / "retained_checkpoints").glob("*.pt"):
         path.unlink()
+    # Intervention plans are compact per-run state bound to the training
+    # fingerprint.  Keeping them while discarding a stale resume can make the
+    # repaired run fail at its first FCV score with an old campaign binding.
+    for path in (
+        run_dir / "plans" / "opposite_donor_plan.pt",
+        run_dir / "plans" / "control_plan.pt",
+    ):
+        if path.exists():
+            path.unlink()
 
 
 def _completed_run(

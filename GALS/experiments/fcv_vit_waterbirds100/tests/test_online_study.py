@@ -968,6 +968,33 @@ class OnlineStudyRetentionTests(unittest.TestCase):
                 )
             self.assertTrue(prepare_control.call_args.kwargs["overwrite"])
 
+            # A pair left by an older campaign must be validated and then
+            # deterministically replaced, not accepted merely because both
+            # filenames exist.
+            donor_path.write_bytes(b"stale donor")
+            control_path.write_bytes(b"stale control")
+            with mock.patch(
+                "fcv.online_study.load_background_bank",
+                side_effect=[{"label": 0}, {"label": 1}],
+            ), mock.patch(
+                "fcv.online_study.prepare_opposite_donor_plan",
+                side_effect=[ValueError("stale fingerprint"), donor_plan],
+            ) as prepare_donor, mock.patch(
+                "fcv.online_study.prepare_control_plan"
+            ) as prepare_control:
+                _prepare_online_intervention_plans(
+                    {},
+                    source,
+                    bank_dir,
+                    "candidate",
+                    "a" * 64,
+                    donor_path,
+                    control_path,
+                )
+            self.assertEqual(prepare_donor.call_count, 2)
+            self.assertTrue(prepare_donor.call_args.kwargs["overwrite"])
+            self.assertTrue(prepare_control.call_args.kwargs["overwrite"])
+
     def test_analysis_only_test_evaluation_cannot_advance_training_rng(self) -> None:
         random.seed(17)
         np.random.seed(17)
@@ -1069,9 +1096,14 @@ class OnlineStudyRetentionTests(unittest.TestCase):
                 "resume_state.pt",
             ):
                 (run_dir / name).write_bytes(b"stale")
+            plans = run_dir / "plans"
+            plans.mkdir()
+            for name in ("opposite_donor_plan.pt", "control_plan.pt"):
+                (plans / name).write_bytes(b"stale")
 
             _invalidate_completed_run_for_bounded_repair(run_dir, "missing detail")
             self.assertFalse(any(retained.glob("*.pt")))
+            self.assertFalse(any(plans.glob("*.pt")))
             receipt = json.loads(
                 (run_dir / "bounded_repair_receipt.json").read_text(encoding="utf-8")
             )
