@@ -44,6 +44,60 @@ def allocated_bytes(root: Path) -> int:
     return total
 
 
+def online_storage_breakdown(root: str | Path) -> Dict[str, int]:
+    """Separate durable candidate evidence from bounded model-state storage."""
+
+    root = Path(root).expanduser().resolve()
+    online_runs = root / "online_runs"
+    retained = sum(
+        allocated_bytes(path)
+        for path in online_runs.glob("*/retained_checkpoints")
+        if path.is_dir()
+    )
+    plans = sum(
+        allocated_bytes(path)
+        for path in online_runs.glob("*/plans")
+        if path.is_dir()
+    )
+    resumes = 0
+    for path in online_runs.glob("*/resume_state.pt"):
+        if path.is_file():
+            resumes += int(path.stat().st_blocks) * 512
+    online_runs_total = allocated_bytes(online_runs)
+    online_run_other = max(0, online_runs_total - retained - plans - resumes)
+    breakdown = {
+        "fcv_evidence": allocated_bytes(root / "online_scores" / "fcv"),
+        "control_evidence": allocated_bytes(root / "online_scores" / "controls"),
+        "oracle_evidence": allocated_bytes(root / "online_scores" / "oracle"),
+        "test_evidence": allocated_bytes(root / "online_test_analysis_only"),
+        "online_run_other": online_run_other,
+        "retained_checkpoints": retained,
+        "resume_states": resumes,
+        "intervention_plans": plans,
+    }
+    breakdown["candidate_evidence_total"] = sum(
+        breakdown[key]
+        for key in (
+            "fcv_evidence",
+            "control_evidence",
+            "oracle_evidence",
+            "test_evidence",
+            "online_run_other",
+        )
+    )
+    breakdown["model_state_total"] = retained + resumes
+    breakdown["categorized_total"] = sum(
+        breakdown[key]
+        for key in (
+            "candidate_evidence_total",
+            "retained_checkpoints",
+            "resume_states",
+            "intervention_plans",
+        )
+    )
+    return breakdown
+
+
 def assert_storage_budget(
     config: Mapping[str, Any],
     output_root: str | Path,
@@ -55,7 +109,17 @@ def assert_storage_budget(
     gib = 1024 ** 3
     hard = float(config["storage"]["hard_budget_gib"])
     guard = float(config["storage"]["launch_guard_gib"])
+    projected_growth = float(
+        config["storage"]["worst_case_concurrent_growth_gib"]
+    )
     used_gib = used / gib
+    if used_gib + projected_growth > hard:
+        raise StorageBudgetError(
+            f"Projected hard storage budget exceeded before {stage}: "
+            f"used={used_gib:.3f} GiB, projected_concurrent_growth="
+            f"{projected_growth:.3f} GiB, hard_budget={hard:.3f} GiB. "
+            "No new large artifact was started."
+        )
     if used_gib >= guard:
         raise StorageBudgetError(
             f"Storage launch guard reached before {stage}: used={used_gib:.3f} GiB, "
@@ -69,6 +133,9 @@ def assert_storage_budget(
         "allocated_gib": used_gib,
         "launch_guard_gib": guard,
         "hard_budget_gib": hard,
+        "projected_concurrent_growth_gib": projected_growth,
+        "projected_peak_gib": used_gib + projected_growth,
+        "storage_breakdown_bytes": online_storage_breakdown(output_root),
     }
 
 

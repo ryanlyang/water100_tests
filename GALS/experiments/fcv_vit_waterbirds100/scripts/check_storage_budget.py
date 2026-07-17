@@ -25,6 +25,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--stage", default="manual_preflight")
+    parser.add_argument(
+        "--output-json",
+        type=Path,
+        default=None,
+        help="Optionally persist the storage snapshot atomically for a later smoke check.",
+    )
     args = parser.parse_args()
     config = load_and_validate_config(args.config)
     result = assert_storage_budget(
@@ -32,6 +38,14 @@ def main() -> None:
         config["paths"]["output_root"],
         stage=args.stage,
     )
+    if args.output_json is not None:
+        output_path = args.output_json.expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = output_path.with_suffix(output_path.suffix + ".tmp")
+        with temporary.open("w", encoding="utf-8") as handle:
+            json.dump(result, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        temporary.replace(output_path)
     print(json.dumps(result, indent=2, sort_keys=True))
 
 

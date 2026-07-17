@@ -15,9 +15,13 @@ sys.path.insert(0, str(SRC_ROOT))
 from fcv.candidate_training import (  # noqa: E402
     build_model,
     pretrained_backbone_sha256,
+    pretrained_provenance_path,
     software_fingerprint,
     source_tree_provenance,
     validate_runtime_software,
+)
+from fcv.campaign_provenance import (  # noqa: E402
+    create_campaign_provenance_receipt,
 )
 from fcv.config import load_and_validate_config  # noqa: E402
 
@@ -37,10 +41,7 @@ def main() -> None:
     config = load_and_validate_config(args.config)
     observed_versions = validate_runtime_software(config)
     model = build_model(config, pretrained=True)
-    output_root = Path(config["paths"]["output_root"])
-    output_summary = args.output_summary or (
-        output_root / "preflight" / "pretrained_model_summary.json"
-    )
+    output_summary = args.output_summary or pretrained_provenance_path(config)
     summary = {
         "schema_version": 1,
         "artifact_type": "fcv_vit_pretrained_initialization",
@@ -64,7 +65,14 @@ def main() -> None:
         json.dump(summary, handle, indent=2, sort_keys=True)
         handle.write("\n")
     temporary.replace(output_summary)
+    campaign = create_campaign_provenance_receipt(
+        config,
+        pretrained_path=output_summary,
+        verify_all_image_bytes=True,
+    )
     summary["output_summary"] = str(output_summary)
+    summary["campaign_provenance_path"] = campaign["artifact_path"]
+    summary["campaign_provenance_sha256"] = campaign["artifact_sha256"]
     print(json.dumps(summary, indent=2, sort_keys=True))
 
 

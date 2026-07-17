@@ -1,73 +1,59 @@
 # Runtime outputs
 
-Runtime artifacts are written beneath the external `paths.output_root` from the
-study configuration. The pipeline will create these subdirectories:
+Runtime artifacts are written beneath `paths.output_root`, outside the source
+tree. The online protocol uses:
 
 ```text
-candidate_models/
 split_manifests/
 patch_masks/
-token_banks/
-fcv_scores/
-control_scores/
+preflight/
+online_runs/
+online_scores/fcv/
+online_scores/controls/
+online_scores/oracle/
+online_test_analysis_only/
 selection_results/
 plots/
 run_logs/
 ```
 
-Large checkpoints, token banks, score files, and plots are intentionally not
-tracked in the source tree.
+`preflight/online_campaign_provenance.json` is the immutable campaign trust
+root. Every resume state, per-candidate summary, completed run, selection
+receipt, and post-hoc summary is required to bind to its exact SHA-256. The
+two real online smoke receipts in `preflight/` prove an epoch-1 interruption
+and epoch-2 resume before the full array starts. They record full online-epoch
+wall time and separate durable FCV/control/Oracle/test evidence from retained
+checkpoints, resume states, and plans. Their projections must fit both the
+eight-writer concurrency reserve and the complete 540-candidate 35 GiB launch
+guard, while projected per-run time must fit the seven-day limit. The aggregate
+`online_smoke_gate_receipt.json` binds both receipts to the current campaign
+and makes a repeated full-launch command idempotent after run 0 advances.
 
-During Step 4, `candidate_models/` contains one directory per sweep run. Each
-directory has three float32 checkpoints (epochs 5, 10, and 20), `metrics.csv`,
-and `run_summary.json`. The optimizer-bearing resume state is removed only
-after the complete 81-candidate pool validates; the cleanup receipt remains.
-Keep all 81 candidate checkpoints until Step 12 completes successfully.
+`online_runs/<run_id>/` stores `validation_metrics.csv`, the separate
+`test_metrics_analysis_only.csv`, deterministic intervention plans, a
+`retention_state.json`, and at most three steady-state retained checkpoint
+files. Replacing a winner may briefly stage one fourth file until the atomic
+resume commit; an interrupted transaction is pruned on restart. During an
+active run the directory also contains one atomic `resume_state.pt`; that file
+is deleted when the run completes.
 
-During the combined Steps 6--8 pipeline, `token_banks/` contains compact bank
-summaries and `cleanup_receipts/`. The two large bank tensors for a candidate
-exist only while that candidate is being scored. At most four sweep runs are
-streamed concurrently. A receipt is finalized only after the candidate's FCV
-CSV, all four control CSVs, summaries, checkpoint, and bank hashes validate.
+The checkpoint for the current epoch and its model-specific token banks are
+created under node-local scratch. They are deleted after FCV, controls,
+Oracle, test analysis, and the atomic resume commit complete. Thus the output
+tree never accumulates 540 model files or token-bank pairs.
 
-During Step 7, `fcv_scores/` contains one shared cached donor-index plan plus a
-per-image CSV and provenance summary for every candidate. The aggregate CSV
-contains only biased-validation and FCV metrics; Oracle and test metrics are
-not available to this stage.
+`selection_results/online_unprivileged_freeze_receipt.json` binds the
+train-holdout selector matrix and choices before Oracle evidence is opened.
+`online_control_diagnostics.csv` and its summary surface control warnings and
+donor/token-distribution diagnostics for every candidate. The subsequent
+`online_selection_summary.json` proves all validation selections were frozen
+without opening test artifacts. The dependent post-hoc phase then writes
+selected test results, full-pool test results, gap closure, rank analysis, and
+scatter plots. Every compact row is revalidated against its hashed per-image
+evidence before reporting.
 
-During Step 8, `control_scores/` contains one shared control plan, four
-per-image control CSVs per candidate, and one per-candidate summary. The pool
-aggregate remains validation-only and has no Oracle/test access.
-
-During Step 9, `selection_results/oracle_scores/` contains one analysis-only
-original-validation summary per candidate. `candidate_oracle_scores.csv`
-strictly indexes the full Oracle pool, `candidate_selector_scores.csv` stores
-all validation-only selector inputs/formulas, and `selection_table.csv` records
-one deterministically selected checkpoint per selector. Test metrics are not
-written until Step 10.
-
-During Step 10, `selection_results/final_test_scores/` contains one resumable
-test summary and one hashed per-example logits/predictions CSV per unique
-selected checkpoint. `final_test_results.csv` expands
-those metrics back to all frozen selector rows without changing their order.
-Its summary records both Step 9 hashes and explicitly states that test metrics
-did not affect selection.
-
-During Step 11, `selection_results/candidate_pool_test_scores/` contains one
-resumable post-hoc test summary and one hashed per-example record file for
-every candidate. The strict
-`candidate_pool_test_scores.csv` index is complete only at 81 rows and marks
-the pool as ineligible for selection. `gap_closure_summary.csv` reports the raw
-FCV-to-Oracle gap fraction, selected candidate identities, and the unfair
-candidate-pool upper bound. Its JSON sidecar binds the result to the frozen
-selection, Step 10 results, pool index, and test-manifest hashes.
-
-During Step 12, `candidate_rank_analysis.csv` stores the one-to-one candidate
-join, canonical validation/test metrics, oriented selector scores, and ranks.
-`rank_correlation_results.csv` contains one row per locked selector with
-descriptive Spearman/Kendall tau-b coefficients, run-cluster bootstrap
-intervals, selection regret, and top-k overlap results.
-`selector_scatter_plots/` contains six individual plots, one combined grid,
-and the biased-validation-versus-test-WGA plot colored by FCV score.
-The summary hashes every input and output and records that test metrics did not
-affect selection.
+Selection freeze also writes `online_checkpoint_cleanup_plan.json` before any
+deletion and `online_checkpoint_cleanup_receipt.json` afterward. Non-global
+per-run winners are removed at this boundary, leaving at most three unique
+globally selected primary checkpoints. The post-hoc analysis refuses to run if
+the receipt, surviving hashes, or recorded deletions do not validate.

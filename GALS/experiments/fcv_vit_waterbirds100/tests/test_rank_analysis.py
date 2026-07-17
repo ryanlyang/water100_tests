@@ -111,6 +111,10 @@ class RankAnalysisTest(unittest.TestCase):
                 "primary_selector_score": [0.1, 0.2, 0.3, 0.4],
                 "fcv_counterfactual_accuracy": [0.2, 0.3, 0.4, 0.5],
                 "fcv_true_class_probability": [0.7, 0.6, 0.5, 0.4],
+                "same_context_counterfactual_accuracy": [0.8, 0.7, 0.6, 0.5],
+                "random_mask_counterfactual_accuracy": [0.1, 0.2, 0.3, 0.4],
+                "shuffled_mask_counterfactual_accuracy": [0.2, 0.3, 0.4, 0.5],
+                "evidence_swap_counterfactual_accuracy": [0.3, 0.4, 0.5, 0.6],
                 "oracle_validation_balanced_group_accuracy": [0.1, 0.2, 0.3, 0.4],
             }
         )
@@ -122,6 +126,10 @@ class RankAnalysisTest(unittest.TestCase):
             "equal_weight_original_and_opposite_fcv_accuracy",
             "opposite_context_counterfactual_accuracy",
             "opposite_context_true_class_probability",
+            "same_context_counterfactual_accuracy",
+            "random_mask_counterfactual_accuracy",
+            "shuffled_mask_counterfactual_accuracy",
+            "evidence_swap_counterfactual_accuracy",
             "oracle_validation_balanced_group_accuracy",
         ]
         selected_ids = [
@@ -130,6 +138,10 @@ class RankAnalysisTest(unittest.TestCase):
             "candidate_d",
             "candidate_d",
             "candidate_a",
+            "candidate_a",
+            "candidate_d",
+            "candidate_d",
+            "candidate_d",
             "candidate_d",
         ]
         selected_paths = [
@@ -138,8 +150,14 @@ class RankAnalysisTest(unittest.TestCase):
         selection_table = pd.DataFrame(
             {
                 "selector_name": selector_names,
-                "selector_family": ["biased", "biased", "fcv", "fcv", "fcv", "oracle"],
-                "availability": ["public", "public", "public", "public", "public", "oracle"],
+                "selector_family": [
+                    "biased", "biased", "fcv", "fcv", "fcv",
+                    "control", "control", "control", "control", "oracle",
+                ],
+                "availability": [
+                    "public", "public", "public", "public", "public",
+                    "public", "public", "public", "public", "oracle",
+                ],
                 "direction": [
                     "maximize",
                     "minimize",
@@ -147,15 +165,21 @@ class RankAnalysisTest(unittest.TestCase):
                     "maximize",
                     "maximize",
                     "maximize",
+                    "maximize",
+                    "maximize",
+                    "maximize",
+                    "maximize",
                 ],
                 "selector_formula": selector_names,
-                "selector_score": [0.9, 0.1, 0.4, 0.5, 0.7, 0.4],
+                "selector_score": [
+                    0.9, 0.1, 0.4, 0.5, 0.7, 0.8, 0.4, 0.5, 0.6, 0.4,
+                ],
                 "selected_checkpoint_id": selected_ids,
                 "selected_checkpoint_path": selected_paths,
                 "selected_checkpoint_sha256": [
                     sha256_file(Path(path)) for path in selected_paths
                 ],
-                "selected_hparams": ["{}"] * 6,
+                "selected_hparams": ["{}"] * len(selector_names),
             }
         )
         table_path = self.root / "selection_table.csv"
@@ -311,7 +335,7 @@ class RankAnalysisTest(unittest.TestCase):
         self.assertEqual(len(candidates), 4)
         self.assertEqual(summary["pool_best_candidate_id"], "candidate_d")
         self.assertFalse(summary["test_metrics_affected_selection"])
-        self.assertEqual(len(summary["scatter_plot_paths"]), 8)
+        self.assertEqual(len(summary["scatter_plot_paths"]), 12)
         self.assertTrue(all(Path(path).is_file() for path in summary["scatter_plot_paths"]))
         self.assertTrue(
             any(

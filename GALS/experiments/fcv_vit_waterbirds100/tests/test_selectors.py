@@ -289,6 +289,10 @@ class SelectorTest(unittest.TestCase):
                     "candidate_id": [candidate_id, candidate_id],
                     "fcv_eligible": [True, True],
                     "p_y_original": [p_original, p_original],
+                    "original_cross_entropy": [
+                        -np.log(p_original),
+                        -np.log(p_original),
+                    ],
                     "p_y_counterfactual_mean": [p_counterfactual, p_counterfactual],
                 }
             ).to_csv(score_path, index=False)

@@ -486,6 +486,9 @@ def prepare_final_test_source(
         num_workers=resolved_workers,
         pin_memory=torch.cuda.is_available(),
         persistent_workers=False,
+        generator=torch.Generator(device="cpu").manual_seed(
+            int(final_cfg["dataloader_seed"])
+        ),
     )
     return FinalTestSource(
         manifest_path=dataset.manifest_path,

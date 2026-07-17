@@ -1608,6 +1608,27 @@ def score_candidate_controls(
         "checkpoint_path": str(checkpoint_path),
         "checkpoint_sha256": checkpoint_sha256,
         "training_fingerprint": checkpoint["training_fingerprint"],
+        "campaign_provenance_path": checkpoint.get(
+            "campaign_provenance_path"
+        ),
+        "campaign_provenance_sha256": checkpoint.get(
+            "campaign_provenance_sha256"
+        ),
+        "campaign_bindings_sha256": checkpoint.get(
+            "campaign_bindings_sha256"
+        ),
+        "pretrained_provenance_path": checkpoint.get(
+            "pretrained_provenance_path"
+        ),
+        "pretrained_provenance_sha256": checkpoint.get(
+            "pretrained_provenance_sha256"
+        ),
+        "pretrained_backbone_sha256": checkpoint.get(
+            "pretrained_backbone_sha256"
+        ),
+        "initial_model_state_sha256": checkpoint.get(
+            "initial_model_state_sha256"
+        ),
         "software_versions": software_versions(),
         "software_fingerprint": software_fingerprint(),
         "validation_manifest_sha256": source.manifest_sha256,

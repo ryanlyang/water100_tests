@@ -152,7 +152,13 @@ class CandidateTrainingTest(unittest.TestCase):
                 {"launch_guard_gib": 39}
             ),
             "stream_concurrency": lambda cfg: cfg["storage"].update(
-                {"max_concurrent_streaming_runs": 8}
+                {"max_concurrent_streaming_runs": 7}
+            ),
+            "transient_retention": lambda cfg: cfg["candidate_pool"].update(
+                {"max_transient_retained_checkpoints_per_run": 3}
+            ),
+            "projected_growth": lambda cfg: cfg["storage"].update(
+                {"worst_case_concurrent_growth_gib": 4.0}
             ),
         }
         for name, mutate in cases.items():
@@ -355,8 +361,8 @@ class CandidateTrainingTest(unittest.TestCase):
         )
         combined = pd.read_csv(output_csv)
         self.assertEqual(result["status"], "complete")
-        self.assertEqual(result["candidate_count"], 81)
-        self.assertEqual(len(combined), 81)
+        self.assertEqual(result["candidate_count"], 540)
+        self.assertEqual(len(combined), 540)
         self.assertFalse(combined["candidate_id"].duplicated().any())
 
         cleanup_receipt = candidate_root / "resume_state_cleanup_receipt.json"
@@ -446,6 +452,10 @@ class CandidateTrainingTest(unittest.TestCase):
         pd.DataFrame(rows[4:]).to_csv(validation_manifest, index=False)
 
         config = deepcopy(self.config)
+        # The legacy trainer remains covered for synthetic resume-equivalence
+        # tests, while the production online config is rejected by that entry
+        # point to prevent 540 persistent checkpoints.
+        config["candidate_pool"]["unit"] = "checkpoint"
         config["training"]["epochs"] = 2
         config["candidate_pool"]["candidate_epochs"] = [1, 2]
         config["training"]["batch_size"] = 2

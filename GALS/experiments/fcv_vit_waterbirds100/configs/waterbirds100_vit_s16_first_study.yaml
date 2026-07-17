@@ -14,6 +14,8 @@ cluster:
   torch_version: 2.11.0+cu130
   torchvision_version: 0.26.0+cu130
   timm_version: 1.0.28
+  online_run_time_limit_hours: 168
+  runtime_projection_safety_factor: 1.5
 
 paths:
   repository_root: /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
@@ -108,15 +110,40 @@ training:
   evaluate_every_epoch: true
 
 candidate_pool:
-  unit: fixed_epoch_checkpoint
+  unit: online_epoch_state
   candidate_epochs:
+    - 1
+    - 2
+    - 3
+    - 4
     - 5
+    - 6
+    - 7
+    - 8
+    - 9
     - 10
+    - 11
+    - 12
+    - 13
+    - 14
+    - 15
+    - 16
+    - 17
+    - 18
+    - 19
     - 20
   expected_training_runs: 27
-  expected_candidate_checkpoints: 81
+  expected_candidate_checkpoints: 540
   persist_all_metric_rows: true
-  checkpoint_retention: candidate_epochs_until_step12_complete_then_prune
+  checkpoint_retention: running_local_primary_selector_winners_only
+  retained_checkpoint_selectors:
+    - biased_validation_accuracy
+    - equal_weight_original_and_opposite_fcv_accuracy
+    - oracle_validation_balanced_group_accuracy
+  max_retained_checkpoints_per_run: 3
+  max_transient_retained_checkpoints_per_run: 4
+  post_freeze_checkpoint_retention: global_primary_selector_winners_only
+  max_final_retained_checkpoints: 3
   checkpoint_dtype: float32
   save_optimizer_state: false
 
@@ -124,9 +151,12 @@ storage:
   hard_budget_gib: 40
   launch_guard_gib: 35
   streaming_token_banks: true
+  token_bank_lifetime: one_online_epoch_node_local_scratch
   delete_token_banks_after_fcv_and_controls: true
   delete_completed_resume_states_after_pool_validation: true
-  max_concurrent_streaming_runs: 4
+  max_concurrent_streaming_runs: 8
+  worst_case_concurrent_growth_gib: 5.0
+  full_campaign_projection_safety_factor: 2.0
 
 execution:
   token_bank_batch_size: 128
@@ -175,6 +205,10 @@ fcv:
     - opposite_context_counterfactual_accuracy
     - opposite_context_true_class_probability
     - control_normalized_fcv
+    - same_context_counterfactual_accuracy
+    - random_mask_counterfactual_accuracy
+    - shuffled_mask_counterfactual_accuracy
+    - evidence_swap_counterfactual_accuracy
     - oracle_validation_worst_group_accuracy
     - oracle_validation_balanced_group_accuracy
   controls:
@@ -207,6 +241,7 @@ evaluation:
   final_test:
     precision: float32
     batch_size: 128
+    dataloader_seed: 0
     evaluate_unique_checkpoints_once: true
     require_complete_step9_selection: true
     preserve_selector_order: true
@@ -259,6 +294,22 @@ evaluation:
       - name: opposite_context_true_class_probability
         display_name: FCV stability
         score_column: fcv_true_class_probability
+        direction: maximize
+      - name: same_context_counterfactual_accuracy
+        display_name: Same-context control
+        score_column: same_context_counterfactual_accuracy
+        direction: maximize
+      - name: random_mask_counterfactual_accuracy
+        display_name: Random-mask control
+        score_column: random_mask_counterfactual_accuracy
+        direction: maximize
+      - name: shuffled_mask_counterfactual_accuracy
+        display_name: Shuffled-mask control
+        score_column: shuffled_mask_counterfactual_accuracy
+        direction: maximize
+      - name: evidence_swap_counterfactual_accuracy
+        display_name: Evidence-swap control
+        score_column: evidence_swap_counterfactual_accuracy
         direction: maximize
       - name: oracle_validation_balanced_group_accuracy
         display_name: Oracle group validation

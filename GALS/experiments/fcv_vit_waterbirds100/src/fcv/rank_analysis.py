@@ -254,9 +254,19 @@ def _plot_selector_scatters(
         plt.close(figure)
         plot_paths.append(output)
 
-    figure, axes = plt.subplots(2, 3, figsize=(13.0, 7.5), constrained_layout=True)
+    ncols = min(3, max(1, len(selector_specs)))
+    nrows = int(np.ceil(len(selector_specs) / ncols))
+    figure, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(4.35 * ncols, 3.55 * nrows),
+        constrained_layout=True,
+        squeeze=False,
+    )
     for axis, spec in zip(axes.flat, selector_specs):
         draw(axis, spec)
+    for axis in list(axes.flat)[len(selector_specs):]:
+        axis.set_visible(False)
     handles, labels = axes.flat[0].get_legend_handles_labels()
     figure.legend(handles, labels, loc="upper center", ncol=2, frameon=False)
     grid_path = plot_dir / "selector_rank_scatter_grid.png"

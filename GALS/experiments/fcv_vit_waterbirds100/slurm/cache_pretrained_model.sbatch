@@ -2,9 +2,9 @@
 #SBATCH --job-name=fcv_vit_cache
 #SBATCH --account=reu-aisocial
 #SBATCH --partition=tigris
-#SBATCH --cpus-per-task=2
-#SBATCH --mem=16G
-#SBATCH --time=00:30:00
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=02:00:00
 #SBATCH --output=/home/ryreu/guided_cnn/logsWaterbird/fcv_vit_waterbirds100_first_study/run_logs/step4_cache_%j.out
 #SBATCH --error=/home/ryreu/guided_cnn/logsWaterbird/fcv_vit_waterbirds100_first_study/run_logs/step4_cache_%j.err
 

@@ -15,6 +15,7 @@ sys.path.insert(0, str(SRC_ROOT))
 
 from fcv.candidate_training import (  # noqa: E402
     get_sweep_run,
+    pretrained_provenance_path,
     train_candidate_run,
     validate_runtime_software,
 )
@@ -93,9 +94,7 @@ def main() -> None:
     candidate_root = args.candidate_root or output_root / config["outputs"][
         "candidate_models"
     ]
-    pretrained_summary = args.pretrained_summary or (
-        output_root / "preflight" / "pretrained_model_summary.json"
-    )
+    pretrained_summary = args.pretrained_summary or pretrained_provenance_path(config)
     run = get_sweep_run(config, args.run_index)
     resolved = {
         "run": {

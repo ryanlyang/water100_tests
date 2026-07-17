@@ -653,6 +653,24 @@ def evaluate_candidate_oracle(
         "checkpoint_path": str(checkpoint_path),
         "checkpoint_sha256": checkpoint_sha256,
         "training_fingerprint": checkpoint["training_fingerprint"],
+        "campaign_provenance_path": checkpoint.get(
+            "campaign_provenance_path"
+        ),
+        "campaign_provenance_sha256": checkpoint.get(
+            "campaign_provenance_sha256"
+        ),
+        "campaign_bindings_sha256": checkpoint.get(
+            "campaign_bindings_sha256"
+        ),
+        "pretrained_provenance_sha256": checkpoint.get(
+            "pretrained_provenance_sha256"
+        ),
+        "pretrained_backbone_sha256": checkpoint.get(
+            "pretrained_backbone_sha256"
+        ),
+        "initial_model_state_sha256": checkpoint.get(
+            "initial_model_state_sha256"
+        ),
         "selector_analysis_fingerprint": selector_analysis_fingerprint(config),
         "oracle_manifest_path": str(source.manifest_path),
         "oracle_manifest_sha256": source.manifest_sha256,

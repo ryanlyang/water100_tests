@@ -87,6 +87,31 @@ def _atomic_csv(frame: pd.DataFrame, path: Path) -> None:
     temporary.replace(path)
 
 
+def _canonical_probability_draw_statistics(
+    probabilities: torch.Tensor,
+) -> tuple[List[float], float, float]:
+    """Derive persisted draw statistics from the persisted draw values.
+
+    The JSON draw list is the canonical raw FCV artifact.  Computing its mean
+    separately with a CUDA float32 reduction can differ from NumPy's float64
+    recomputation by more than the strict artifact tolerance on GH200.  Convert
+    the draws once, then derive every saved statistic from that exact list.
+    """
+
+    if probabilities.ndim != 1 or probabilities.numel() == 0:
+        raise FCVScoringError(
+            "FCV probability draws must be a non-empty one-dimensional tensor."
+        )
+    values = [
+        float(value)
+        for value in probabilities.detach().to(device="cpu").tolist()
+    ]
+    array = np.asarray(values, dtype=np.float64)
+    if not np.isfinite(array).all() or ((array < 0.0) | (array > 1.0)).any():
+        raise FCVScoringError("FCV probability draws are invalid.")
+    return values, float(array.mean()), float(array.std(ddof=0))
+
+
 def _load_trusted_torch_artifact(path: Path) -> Mapping[str, Any]:
     try:
         payload = torch.load(path, map_location="cpu", weights_only=False)
@@ -714,9 +739,11 @@ def recompute_fcv_metrics_from_frame(
         "label",
         "fcv_eligible",
         "p_y_original",
+        "original_cross_entropy",
         "pred_original",
         "correct_original",
         "p_y_counterfactual_mean",
+        "p_y_counterfactual_std",
         "pred_counterfactual_majority",
         "correct_counterfactual_majority",
         "counterfactual_draw_accuracy",
@@ -732,6 +759,10 @@ def recompute_fcv_metrics_from_frame(
         "real_swap_replaced_token_changed_fraction",
         "real_swap_replacement_delta_mean",
         "real_swap_replacement_delta_max",
+        "target_donor_cosine_similarity_mean",
+        "target_nearest_donor_cosine_mean",
+        "donor_unique_source_images",
+        "donor_max_source_fraction",
     }
     missing = sorted(required.difference(frame.columns))
     if missing:
@@ -744,10 +775,13 @@ def recompute_fcv_metrics_from_frame(
     normalized = frame.copy()
     num_classes = int(config["model"]["num_classes"])
     original_probabilities = normalized["p_y_original"].astype(float).to_numpy()
+    original_losses = normalized["original_cross_entropy"].astype(float).to_numpy()
     if not np.isfinite(original_probabilities).all() or (
         (original_probabilities < 0.0) | (original_probabilities > 1.0)
     ).any():
         raise FCVScoringError("FCV original probabilities are invalid.")
+    if not np.isfinite(original_losses).all() or (original_losses < 0.0).any():
+        raise FCVScoringError("FCV original cross-entropies are invalid.")
     for index in normalized.index:
         label = int(normalized.at[index, "label"])
         original_prediction = int(normalized.at[index, "pred_original"])
@@ -814,6 +848,7 @@ def recompute_fcv_metrics_from_frame(
         draw_accuracy = float(correct_draws / draw_count)
         majority = int(np.bincount(predictions, minlength=num_classes).argmax())
         mean_probability = float(probabilities.mean())
+        std_probability = float(probabilities.std(ddof=0))
         confidence_drop = float(
             float(normalized.at[index, "p_y_original"]) - mean_probability
         )
@@ -828,6 +863,7 @@ def recompute_fcv_metrics_from_frame(
         for column, expected in (
             ("counterfactual_draw_accuracy", draw_accuracy),
             ("p_y_counterfactual_mean", mean_probability),
+            ("p_y_counterfactual_std", std_probability),
             ("counterfactual_confidence_drop", confidence_drop),
         ):
             if not np.isclose(
@@ -897,10 +933,20 @@ def recompute_fcv_metrics_from_frame(
         ),
         "eligible_intervention_count": int(len(eligible_diagnostics)),
     }
+    token_distribution_global_means = {
+        column: float(eligible_diagnostics[column].astype(float).mean())
+        for column in (
+            "target_donor_cosine_similarity_mean",
+            "target_nearest_donor_cosine_mean",
+            "donor_unique_source_images",
+            "donor_max_source_fraction",
+        )
+    }
     return {
         "sample_count": int(len(normalized)),
         "eligible_sample_count": int(len(eligible)),
         "original_accuracy": original_accuracy,
+        "original_loss": float(original_losses.mean()),
         "counterfactual_accuracy": counterfactual_accuracy,
         "counterfactual_majority_accuracy": float(
             eligible["correct_counterfactual_majority"].astype(float).mean()
@@ -925,6 +971,7 @@ def recompute_fcv_metrics_from_frame(
         "primary_selector_score": primary,
         "per_class": per_class,
         "swap_diagnostics": swap_diagnostics,
+        "token_distribution_global_means": token_distribution_global_means,
     }
 
 
@@ -936,6 +983,7 @@ def validate_fcv_summary_against_frame(
     recomputed = recompute_fcv_metrics_from_frame(frame, config)
     fields = {
         "biased_validation_accuracy_recomputed": "original_accuracy",
+        "biased_validation_loss_recomputed": "original_loss",
         "opposite_context_counterfactual_accuracy": "counterfactual_accuracy",
         "opposite_context_counterfactual_majority_accuracy": (
             "counterfactual_majority_accuracy"
@@ -1008,6 +1056,17 @@ def validate_fcv_summary_against_frame(
     ):
         if int(observed_swap.get(key, -1)) != int(recomputed["swap_diagnostics"][key]):
             raise FCVScoringError(f"FCV real-swap diagnostic {key} does not reproduce.")
+    observed_token_diagnostics = summary.get("token_distribution_diagnostics")
+    if not isinstance(observed_token_diagnostics, Mapping) or not isinstance(
+        observed_token_diagnostics.get("global_means"), Mapping
+    ):
+        raise FCVScoringError("FCV summary lacks token-distribution diagnostics.")
+    for key, expected in recomputed["token_distribution_global_means"].items():
+        _assert_close(
+            f"token_distribution.global_means.{key}",
+            observed_token_diagnostics["global_means"].get(key),
+            expected,
+        )
     return recomputed
 
 
@@ -1108,7 +1167,7 @@ def score_candidate_fcv(
     real_swap_replaced_token_changed_count = 0
     real_swap_replacement_delta_sum = 0.0
     real_swap_replacement_delta_max = 0.0
-    original_loss_sum = 0.0
+    original_loss_values: List[float] = []
     with torch.inference_mode():
         for images, labels, sample_ids in source.loader:
             images = images.to(model_device, non_blocking=True)
@@ -1171,11 +1230,13 @@ def score_candidate_fcv(
                 identity_swap_max_abs_error,
                 float((normal_logits - identity_logits).abs().max().item()),
             )
-            original_loss_sum += float(
-                F.cross_entropy(
-                    original_logits, labels_device, reduction="sum"
-                ).item()
+            batch_original_losses = (
+                F.cross_entropy(original_logits, labels_device, reduction="none")
+                .detach()
+                .to(device="cpu", dtype=torch.float64)
+                .tolist()
             )
+            original_loss_values.extend(float(value) for value in batch_original_losses)
             original_probabilities = original_logits.float().softmax(dim=1)
             original_predictions = original_logits.argmax(dim=1)
 
@@ -1202,6 +1263,9 @@ def score_candidate_fcv(
                         patch_record.get("eligibility_reason", "unknown")
                     ),
                     "p_y_original": original_probability,
+                    "original_cross_entropy": float(
+                        batch_original_losses[batch_index]
+                    ),
                     "pred_original": original_prediction,
                     "correct_original": int(original_prediction == label),
                     "p_y_counterfactual_mean": None,
@@ -1399,13 +1463,17 @@ def score_candidate_fcv(
                         draw_predictions, minlength=num_classes
                     )
                     majority_prediction = int(prediction_counts.argmax().item())
-                    mean_probability = float(true_class_probabilities.mean().item())
+                    (
+                        probability_values,
+                        mean_probability,
+                        std_probability,
+                    ) = _canonical_probability_draw_statistics(
+                        true_class_probabilities
+                    )
                     row.update(
                         {
                             "p_y_counterfactual_mean": mean_probability,
-                            "p_y_counterfactual_std": float(
-                                true_class_probabilities.std(unbiased=False).item()
-                            ),
+                            "p_y_counterfactual_std": std_probability,
                             "pred_counterfactual_majority": majority_prediction,
                             "correct_counterfactual_majority": int(
                                 majority_prediction == label
@@ -1417,10 +1485,7 @@ def score_candidate_fcv(
                                 row["p_y_original"] - mean_probability
                             ),
                             "p_y_counterfactual_draws": json.dumps(
-                                [
-                                    float(value)
-                                    for value in true_class_probabilities.cpu().tolist()
-                                ],
+                                probability_values,
                                 separators=(",", ":"),
                             ),
                             "pred_counterfactual_draws": json.dumps(
@@ -1442,7 +1507,7 @@ def score_candidate_fcv(
         raise FCVScoringError("No validation samples are eligible for FCV scoring.")
     originally_correct_eligible = eligible[eligible["correct_original"] == 1]
     original_accuracy = float(frame["correct_original"].mean())
-    original_loss = original_loss_sum / source.sample_count
+    original_loss = _mean(original_loss_values)
     checkpoint_metrics = checkpoint.get("metrics", {})
     checkpoint_accuracy = float(checkpoint_metrics.get("biased_val_accuracy", float("nan")))
     checkpoint_loss = float(checkpoint_metrics.get("biased_val_loss", float("nan")))
@@ -1518,6 +1583,27 @@ def score_candidate_fcv(
         "checkpoint_path": str(checkpoint_path),
         "checkpoint_sha256": checkpoint_sha256,
         "training_fingerprint": checkpoint["training_fingerprint"],
+        "campaign_provenance_path": checkpoint.get(
+            "campaign_provenance_path"
+        ),
+        "campaign_provenance_sha256": checkpoint.get(
+            "campaign_provenance_sha256"
+        ),
+        "campaign_bindings_sha256": checkpoint.get(
+            "campaign_bindings_sha256"
+        ),
+        "pretrained_provenance_path": checkpoint.get(
+            "pretrained_provenance_path"
+        ),
+        "pretrained_provenance_sha256": checkpoint.get(
+            "pretrained_provenance_sha256"
+        ),
+        "pretrained_backbone_sha256": checkpoint.get(
+            "pretrained_backbone_sha256"
+        ),
+        "initial_model_state_sha256": checkpoint.get(
+            "initial_model_state_sha256"
+        ),
         "software_versions": software_versions(),
         "software_fingerprint": software_fingerprint(),
         "validation_manifest_path": str(source.manifest_path),

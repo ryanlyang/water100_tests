@@ -240,7 +240,15 @@ def load_and_validate_config_dict(config: dict) -> dict:
         return load_and_validate_config(path, strict_protocol=False)
 
 
-@unittest.skipUnless(importlib.util.find_spec("timm"), "timm is not installed")
+def _real_timm_is_available() -> bool:
+    if importlib.util.find_spec("timm") is None:
+        return False
+    import timm
+
+    return getattr(timm, "__version__", "") != "test-stub"
+
+
+@unittest.skipUnless(_real_timm_is_available(), "real timm is not installed")
 class RealTimmViTForwardTest(unittest.TestCase):
     def test_locked_model_reconstructs_logits(self) -> None:
         import timm

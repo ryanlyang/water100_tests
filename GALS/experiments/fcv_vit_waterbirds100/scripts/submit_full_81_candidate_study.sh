@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "This legacy 81-checkpoint launcher is disabled." >&2
+echo "Use scripts/submit_full_online_540_study.sh for the all-epoch online protocol." >&2
+exit 2
+
 REPO=/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
 OUTPUT=/home/ryreu/guided_cnn/logsWaterbird/fcv_vit_waterbirds100_first_study
 ENV=/home/ryreu/miniforge3-aarch64/envs/fcv_gh200
@@ -171,4 +175,3 @@ echo "Final job: $rank_job"
 echo "Submission record: $record"
 echo "Monitor with: squeue --me -o '%.18i %.24j %.2t %.10M %R'"
 echo "If a required stage fails, downstream afterok jobs will not run."
-

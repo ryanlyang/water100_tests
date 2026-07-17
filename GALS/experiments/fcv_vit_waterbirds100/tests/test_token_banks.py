@@ -38,6 +38,7 @@ from fcv.controls import (  # noqa: E402
 )
 from fcv.fcv_scoring import (  # noqa: E402
     FCVScoringError,
+    _canonical_probability_draw_statistics as _canonical_fcv_draw_statistics,
     aggregate_fcv_score_summaries,
     load_background_bank,
     make_counterfactual_token_batch,
@@ -372,6 +373,36 @@ class TokenBanksTest(unittest.TestCase):
         # reduction differs from the canonical persisted mean by > 1e-7.
         self.assertGreater(
             abs(float(probabilities.mean().item()) - float(recomputed.mean())),
+            1.0e-7,
+        )
+        self.assertEqual(canonical_mean, float(recomputed.mean()))
+        self.assertEqual(canonical_std, float(recomputed.std(ddof=0)))
+
+    def test_fcv_probability_statistics_use_serialized_draw_values(self) -> None:
+        probabilities = torch.tensor(
+            [
+                0.7912359833717346,
+                0.9121272563934326,
+                0.8715132474899292,
+                0.9466590285301208,
+                0.7982290983200073,
+            ],
+            dtype=torch.float32,
+        )
+        values, canonical_mean, canonical_std = (
+            _canonical_fcv_draw_statistics(probabilities)
+        )
+        recomputed = np.asarray(
+            json.loads(json.dumps(values, separators=(",", ":"))),
+            dtype=np.float64,
+        )
+
+        # This exact draw vector and CUDA-reduced mean were recovered from the
+        # failed GH200 run.  A CPU reduction need not reproduce the GH200
+        # accumulation order, so compare against the persisted failing value.
+        failed_gh200_mean = 0.8639530539512634
+        self.assertGreater(
+            abs(failed_gh200_mean - float(recomputed.mean())),
             1.0e-7,
         )
         self.assertEqual(canonical_mean, float(recomputed.mean()))

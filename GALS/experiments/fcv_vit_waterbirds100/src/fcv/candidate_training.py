@@ -67,6 +67,19 @@ class CandidateTrainingError(ValueError):
     """Raised when candidate training would violate the locked protocol."""
 
 
+PRETRAINED_PROVENANCE_FILENAME = "pretrained_model_summary.json"
+
+
+def pretrained_provenance_path(config: Mapping[str, Any]) -> Path:
+    """Return the one canonical cache-producer/online-consumer artifact path."""
+
+    return (
+        Path(str(config["paths"]["output_root"])).expanduser().resolve()
+        / "preflight"
+        / PRETRAINED_PROVENANCE_FILENAME
+    )
+
+
 @dataclass(frozen=True)
 class SweepRun:
     run_index: int
@@ -727,6 +740,7 @@ def _candidate_checkpoint_payload(
     initial_model_state_sha256: str,
     pretrained_backbone_state_sha256: str,
     pretrained_provenance: Mapping[str, Any] | None,
+    campaign_provenance: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     return {
         "schema_version": 1,
@@ -745,6 +759,21 @@ def _candidate_checkpoint_payload(
         ),
         "pretrained_provenance_sha256": (
             pretrained_provenance.get("artifact_sha256") if pretrained_provenance else None
+        ),
+        "campaign_provenance_path": (
+            campaign_provenance.get("artifact_path")
+            if campaign_provenance
+            else None
+        ),
+        "campaign_provenance_sha256": (
+            campaign_provenance.get("artifact_sha256")
+            if campaign_provenance
+            else None
+        ),
+        "campaign_bindings_sha256": (
+            campaign_provenance.get("bindings_sha256")
+            if campaign_provenance
+            else None
         ),
         "manifest_sha256": dict(manifest_hashes),
         "metrics": dict(metric_row),
@@ -944,6 +973,13 @@ def train_candidate_run(
     pretrained_provenance_path: str | Path | None = None,
 ) -> Dict[str, Any]:
     """Train or resume one of the 27 locked candidate-pool runs."""
+
+    if config["candidate_pool"].get("unit") == "online_epoch_state":
+        raise CandidateTrainingError(
+            "The production config uses online epoch scoring. Invoke "
+            "scripts/run_online_epoch_study.py; the legacy checkpoint-pool trainer "
+            "is intentionally disabled to prevent 540 persistent checkpoints."
+        )
 
     train_manifest = Path(train_manifest)
     validation_manifest = Path(validation_manifest)

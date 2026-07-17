@@ -14,7 +14,7 @@ class ConfigError(ValueError):
 
 
 def candidate_epochs(config: Mapping[str, Any]) -> List[int]:
-    """Return the ordered, precommitted checkpoint epochs in the candidate pool."""
+    """Return the ordered, precommitted online candidate epochs."""
 
     training = _require(config, "training", "config")
     pool = _require(config, "candidate_pool", "config")
@@ -91,6 +91,10 @@ def validate_config(
         raise ConfigError("The first study locks torchvision=0.26.0+cu130.")
     if cluster.get("timm_version") != "1.0.28":
         raise ConfigError("The first study locks timm=1.0.28.")
+    if float(cluster.get("online_run_time_limit_hours", -1.0)) != 168.0:
+        raise ConfigError("Each production online run is locked to a seven-day limit.")
+    if float(cluster.get("runtime_projection_safety_factor", -1.0)) != 1.5:
+        raise ConfigError("The online runtime projection uses a locked 1.5x margin.")
 
     holdout = _require(data, "biased_train_holdout", "data")
     train_fraction = float(_require(holdout, "train_fraction", "data.biased_train_holdout"))
@@ -163,9 +167,9 @@ def validate_config(
         raise ConfigError("The locked first-study training length is 20 epochs.")
     expected_runs = len(learning_rates) * len(weight_decays) * len(seeds)
     selected_epochs = candidate_epochs(config)
-    if strict_protocol and selected_epochs != [5, 10, 20]:
+    if strict_protocol and selected_epochs != list(range(1, 21)):
         raise ConfigError(
-            "The reduced first study locks candidate epochs to [5, 10, 20]."
+            "The online first study treats every epoch 1..20 as a candidate."
         )
     expected_candidates = expected_runs * len(selected_epochs)
     if int(pool.get("expected_training_runs", -1)) != expected_runs:
@@ -242,14 +246,35 @@ def validate_config(
         raise ConfigError("Candidate training requires deterministic algorithms.")
     if reproducibility.get("cudnn_benchmark") is not False:
         raise ConfigError("cuDNN benchmarking must be disabled for exact resume.")
-    if pool.get("unit") != "fixed_epoch_checkpoint":
-        raise ConfigError("The reduced study uses fixed candidate checkpoint epochs.")
+    if pool.get("unit") != "online_epoch_state":
+        raise ConfigError("The production study uses online epoch states as candidates.")
     if pool.get("checkpoint_retention") != (
-        "candidate_epochs_until_step12_complete_then_prune"
+        "running_local_primary_selector_winners_only"
     ):
         raise ConfigError(
-            "All reduced-pool candidate checkpoints must remain through Step 12."
+            "Online training may retain only running local primary-selector winners."
         )
+    expected_retained_selectors = [
+        "biased_validation_accuracy",
+        "equal_weight_original_and_opposite_fcv_accuracy",
+        "oracle_validation_balanced_group_accuracy",
+    ]
+    if pool.get("retained_checkpoint_selectors") != expected_retained_selectors:
+        raise ConfigError("The three retained online selector checkpoints are stale.")
+    if int(pool.get("max_retained_checkpoints_per_run", -1)) != 3:
+        raise ConfigError("At most three unique selector winners may be retained per run.")
+    if int(pool.get("max_transient_retained_checkpoints_per_run", -1)) != 4:
+        raise ConfigError(
+            "Crash-safe replacement may transiently stage exactly one fourth checkpoint."
+        )
+    if pool.get("post_freeze_checkpoint_retention") != (
+        "global_primary_selector_winners_only"
+    ):
+        raise ConfigError(
+            "After selection freeze, only unique global primary winners may remain."
+        )
+    if int(pool.get("max_final_retained_checkpoints", -1)) != 3:
+        raise ConfigError("At most three unique checkpoints may remain after freeze.")
     if pool.get("checkpoint_dtype") != "float32":
         raise ConfigError("Candidate checkpoint weights must remain float32.")
     if pool.get("save_optimizer_state") is not False:
@@ -260,11 +285,18 @@ def validate_config(
         raise ConfigError("The reduced study locks storage limits to 35/40 GiB.")
     if not 0.0 < launch_guard < hard_budget:
         raise ConfigError("storage.launch_guard_gib must be below hard_budget_gib.")
+    if float(storage.get("worst_case_concurrent_growth_gib", -1.0)) != 5.0:
+        raise ConfigError(
+            "The production storage guard reserves 5 GiB for all concurrent writes."
+        )
+    if float(storage.get("full_campaign_projection_safety_factor", -1.0)) != 2.0:
+        raise ConfigError("The full-campaign storage projection uses a locked 2x margin.")
     locked_storage = {
         "streaming_token_banks": True,
+        "token_bank_lifetime": "one_online_epoch_node_local_scratch",
         "delete_token_banks_after_fcv_and_controls": True,
         "delete_completed_resume_states_after_pool_validation": True,
-        "max_concurrent_streaming_runs": 4,
+        "max_concurrent_streaming_runs": 8,
     }
     for key, expected in locked_storage.items():
         if storage.get(key) != expected:
@@ -450,6 +482,10 @@ def validate_config(
         "opposite_context_counterfactual_accuracy",
         "opposite_context_true_class_probability",
         "control_normalized_fcv",
+        "same_context_counterfactual_accuracy",
+        "random_mask_counterfactual_accuracy",
+        "shuffled_mask_counterfactual_accuracy",
+        "evidence_swap_counterfactual_accuracy",
         "oracle_validation_worst_group_accuracy",
         "oracle_validation_balanced_group_accuracy",
     }
@@ -492,6 +528,8 @@ def validate_config(
         raise ConfigError("Step 10 final-test batch size must be positive.")
     if strict_protocol and int(final_test.get("batch_size")) != 128:
         raise ConfigError("The production final-test batch size is locked to 128.")
+    if int(final_test.get("dataloader_seed", -1)) != 0:
+        raise ConfigError("The production final-test DataLoader seed is locked to 0.")
     for key in (
         "evaluate_unique_checkpoints_once",
         "require_complete_step9_selection",
@@ -591,6 +629,30 @@ def validate_config(
             "name": "opposite_context_true_class_probability",
             "display_name": "FCV stability",
             "score_column": "fcv_true_class_probability",
+            "direction": "maximize",
+        },
+        {
+            "name": "same_context_counterfactual_accuracy",
+            "display_name": "Same-context control",
+            "score_column": "same_context_counterfactual_accuracy",
+            "direction": "maximize",
+        },
+        {
+            "name": "random_mask_counterfactual_accuracy",
+            "display_name": "Random-mask control",
+            "score_column": "random_mask_counterfactual_accuracy",
+            "direction": "maximize",
+        },
+        {
+            "name": "shuffled_mask_counterfactual_accuracy",
+            "display_name": "Shuffled-mask control",
+            "score_column": "shuffled_mask_counterfactual_accuracy",
+            "direction": "maximize",
+        },
+        {
+            "name": "evidence_swap_counterfactual_accuracy",
+            "display_name": "Evidence-swap control",
+            "score_column": "evidence_swap_counterfactual_accuracy",
             "direction": "maximize",
         },
         {
