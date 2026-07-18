@@ -171,13 +171,35 @@ def stratified_train_holdout(
 ) -> Tuple[List[Tuple[Path, int]], List[Tuple[Path, int]]]:
     if not 0.0 < validation_fraction < 1.0:
         raise ValueError("validation_fraction must be in (0, 1)")
+    # MNIST's ten classes are not exactly equal-sized.  Rounding each class
+    # independently yields 5,999 rather than 6,000 holdout examples.  Use
+    # deterministic largest-remainder apportionment so the split is both
+    # class-stratified and exactly the requested global fraction.
+    class_sizes = {label: len(by_label[label]) for label in range(NUM_CLASSES)}
+    total_size = sum(class_sizes.values())
+    target_validation_size = int(round(total_size * validation_fraction))
+    exact_quotas = {
+        label: class_sizes[label] * validation_fraction
+        for label in range(NUM_CLASSES)
+    }
+    validation_counts = {
+        label: int(math.floor(exact_quotas[label])) for label in range(NUM_CLASSES)
+    }
+    remaining = target_validation_size - sum(validation_counts.values())
+    remainder_order = sorted(
+        range(NUM_CLASSES),
+        key=lambda label: (-(exact_quotas[label] - validation_counts[label]), label),
+    )
+    for label in remainder_order[:remaining]:
+        validation_counts[label] += 1
+
     rng = np.random.default_rng(split_seed)
     train: List[Tuple[Path, int]] = []
     validation: List[Tuple[Path, int]] = []
     for label in range(NUM_CLASSES):
         paths = list(by_label[label])
         order = rng.permutation(len(paths))
-        n_val = int(round(len(paths) * validation_fraction))
+        n_val = validation_counts[label]
         val_indices = set(int(index) for index in order[:n_val])
         for index, path in enumerate(paths):
             target = validation if index in val_indices else train

@@ -63,6 +63,22 @@ class DecoySusceptibilityTest(unittest.TestCase):
             {label: 10 for label in range(10)},
         )
 
+    def test_unequal_classes_still_produce_exact_global_fraction(self) -> None:
+        # Mirrors the property that exposed the real MNIST failure: class sizes
+        # differ, but a 10% holdout must still contain exactly 10% globally.
+        sizes = [5923, 6742, 5958, 6131, 5842, 5421, 5918, 6265, 5851, 5949]
+        by_label = {
+            label: [Path(f"/{label}/{index:05d}.png") for index in range(size)]
+            for label, size in enumerate(sizes)
+        }
+        train, validation = stratified_train_holdout(by_label)
+        self.assertEqual(sum(sizes), 60000)
+        self.assertEqual(len(train), 54000)
+        self.assertEqual(len(validation), 6000)
+        for label, size in enumerate(sizes):
+            observed = sum(item_label == label for _, item_label in validation)
+            self.assertLessEqual(abs(observed - size * 0.10), 1.0)
+
     def test_grid_has_nine_runs_in_stable_order(self) -> None:
         runs = enumerate_runs()
         self.assertEqual(len(runs), 9)
@@ -72,4 +88,3 @@ class DecoySusceptibilityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
