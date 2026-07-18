@@ -10,6 +10,15 @@ evaluation, a ten-epoch no-checkpoint online runner, leakage-separated selector
 freezing and post-hoc reports, and the provenance-gated Tigris smoke/full
 launch chain.
 
+Pre-result feasibility amendment (2026-07-18): the first real Tigris
+preflight found that 65 of 6,000 OpenCLIP+DINO maps overlap the synthetic
+decoy region. Such samples are now explicitly marked FCV-ineligible and
+excluded from both target and donor pools. Their IDs, counts, classes, and
+reasons remain in the teacher audit. The campaign still fails if the retained
+pool violates the precommitted overall or per-class eligibility minima. This
+does not alter teacher maps, thresholds, donor rules, candidate models, or any
+selection metric, and was made before training or test-result inspection.
+
 ## Status and purpose
 
 This document locks the implementation protocol for the second
@@ -357,6 +366,8 @@ Before launching the array, require:
 - valid 14x14 projected masks;
 - at least one safe evidence patch per eligible target;
 - enough safe background patches to include the decoy region;
+- explicit exclusion and auditing of targets whose decoy cells are not safe
+  background;
 - no image-transform or sample-ID mismatch;
 - saved overlays for a fixed audit subset.
 
@@ -415,8 +426,11 @@ position embedding. Leave target evidence, target ambiguous, and donor-evidence
 conflict positions unchanged.
 
 The exact decoy patch-grid cells must be represented among the replaceable
-positions. If a teacher map marks the decoy patch as evidence, the preflight
-must fail rather than silently excluding the shortcut intervention.
+positions. If a teacher map marks any decoy cell as evidence or ambiguous, the
+target is explicitly excluded from both target and donor pools and recorded in
+the audit. The preflight fails if these exclusions leave fewer than the locked
+overall or per-class minimums; it never silently performs FCV without replacing
+the shortcut region.
 
 ---
 

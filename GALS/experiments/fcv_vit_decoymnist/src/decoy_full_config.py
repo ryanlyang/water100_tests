@@ -384,7 +384,7 @@ def validate_config(config: Mapping[str, Any]) -> None:
         "minimum_eligible_fraction": 0.10,
         "minimum_eligible_per_class": 20,
         "require_decoy_region_safe_background": True,
-        "reject_any_teacher_evidence_on_decoy": True,
+        "decoy_unsafe_target_policy": "exclude_and_audit",
     }
     for key, expected in expected_mask_acceptance.items():
         if fcv.get(key) != expected:

@@ -109,6 +109,11 @@ categories, labels, sample IDs, and eligibility flags. It is loaded with
 `allow_pickle=False`; no model state, token features, or transformed dataset
 is stored.
 
+Targets whose teacher map does not classify every decoy-overlapping ViT cell
+as safe background are explicitly audited and excluded from both FCV target
+and donor pools. Preflight still fails unless the retained pool satisfies the
+locked overall and per-class eligibility minima.
+
 If coverage is incomplete, preprocessing fails and writes
 `missing_teacher_maps.csv` plus an exact regeneration request. Missing maps
 must be produced by the frozen OpenCLIP+DINO pipeline; the code will not

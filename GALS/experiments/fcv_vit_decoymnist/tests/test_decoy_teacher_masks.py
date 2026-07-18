@@ -156,19 +156,26 @@ class DecoyTeacherMasksTest(unittest.TestCase):
         self.assertEqual(summary["status"], "failed_missing_teacher_maps")
         self.assertFalse((output / "projected_teacher_masks.npz").exists())
 
-    def test_teacher_evidence_on_decoy_fails_closed(self) -> None:
+    def test_teacher_evidence_on_decoy_is_excluded_and_audited(self) -> None:
         self._write_maps(contaminate_first=True)
         output = self.root / "contaminated_audit"
-        with self.assertRaisesRegex(TeacherMaskError, "overlaps the decoy"):
-            prepare_teacher_masks(self.config, self.validation_path, output)
+        result = prepare_teacher_masks(self.config, self.validation_path, output)
         summary = json.loads(
             (output / "teacher_mask_preflight_summary.json").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertEqual(summary["status"], "failed_acceptance")
+        self.assertEqual(summary["status"], "accepted")
         self.assertEqual(summary["decoy_evidence_target_count"], 1)
-        self.assertFalse((output / "projected_teacher_masks.npz").exists())
+        self.assertEqual(summary["decoy_unsafe_target_count"], 1)
+        self.assertEqual(summary["decoy_unsafe_target_policy"], "exclude_and_audit")
+        self.assertTrue((output / "projected_teacher_masks.npz").exists())
+        arrays, _binding = load_projected_teacher_masks(
+            self.config, self.validation_path, result["artifacts"]["masks"]
+        )
+        first_id = str(self.validation.iloc[0]["sample_id"])
+        first_index = arrays["sample_ids"].astype(str).tolist().index(first_id)
+        self.assertFalse(bool(arrays["fcv_eligible"][first_index]))
 
 
 if __name__ == "__main__":

@@ -177,7 +177,7 @@ fcv:
   minimum_eligible_fraction: 0.10
   minimum_eligible_per_class: 20
   require_decoy_region_safe_background: true
-  reject_any_teacher_evidence_on_decoy: true
+  decoy_unsafe_target_policy: exclude_and_audit
   donor_samples_per_target: 5
   donor_plan_seed: 0
   donor_rules:

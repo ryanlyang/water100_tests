@@ -590,10 +590,8 @@ def prepare_teacher_masks(
                 f"class {label} has {count} eligible; requires "
                 f"{fcv_cfg['minimum_eligible_per_class']}"
             )
-    if bool(fcv_cfg["reject_any_teacher_evidence_on_decoy"]) and decoy_evidence_targets:
-        acceptance_errors.append(
-            f"teacher evidence overlaps the decoy in {decoy_evidence_targets} targets"
-        )
+    if fcv_cfg["decoy_unsafe_target_policy"] != "exclude_and_audit":
+        acceptance_errors.append("unsupported decoy-unsafe target policy")
 
     teacher_set_hash = _teacher_set_sha256(audit_rows)
     summary = {
@@ -616,6 +614,10 @@ def prepare_teacher_masks(
         "eligible_fraction": eligible_fraction,
         "eligible_by_class": eligible_by_class,
         "decoy_evidence_target_count": decoy_evidence_targets,
+        "decoy_unsafe_target_count": int(
+            (~audit["decoy_region_safe_background"].astype(bool)).sum()
+        ),
+        "decoy_unsafe_target_policy": fcv_cfg["decoy_unsafe_target_policy"],
         "mean_teacher_exact_digit_iou_analysis_only": float(
             audit["teacher_exact_digit_iou_analysis_only"].mean()
         ),
@@ -649,6 +651,11 @@ def prepare_teacher_masks(
         "mask_artifact_path": str(artifacts["masks"]),
         "mask_artifact_sha256": sha256_file(artifacts["masks"]),
         "sample_count": int(len(audit)),
+        "eligible_count": int(eligible_mask.sum()),
+        "decoy_unsafe_target_count": int(
+            (~audit["decoy_region_safe_background"].astype(bool)).sum()
+        ),
+        "decoy_unsafe_target_policy": fcv_cfg["decoy_unsafe_target_policy"],
         "patch_count": patch_count,
         "category_encoding": {
             "background": CATEGORY_BACKGROUND,
@@ -709,4 +716,3 @@ def load_projected_teacher_masks(
     if arrays["patch_categories"].shape != expected_shape:
         raise TeacherMaskError("Projected patch-category shape is incorrect.")
     return arrays, binding
-

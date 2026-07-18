@@ -66,13 +66,15 @@ def main() -> None:
     preflight_root.mkdir(parents=True, exist_ok=True)
     paths = manifest_paths(config)
 
-    if not (Path(config["paths"]["split_manifest_dir"]) / "manifest_bundle.json").is_file():
-        prepare_decoymnist_manifests(
-            config,
-            config["paths"]["split_manifest_dir"],
-            workers=int(config["training"]["num_workers"]),
-            overwrite=False,
-        )
+    # Rebuild deterministic campaign inputs on every preflight. This prevents a
+    # prior failed or older-protocol launch from supplying artifacts bound to a
+    # stale canonical configuration hash.
+    prepare_decoymnist_manifests(
+        config,
+        config["paths"]["split_manifest_dir"],
+        workers=int(config["training"]["num_workers"]),
+        overwrite=True,
+    )
     bindings = {
         role: validate_manifest_bundle(config, path, role)
         for role, path in paths.items()
@@ -80,26 +82,24 @@ def main() -> None:
     image_audit = verify_all_manifest_image_bytes(config, paths)
 
     mask_path = output_root / "teacher_mask_audit" / "projected_teacher_masks.npz"
-    if not mask_path.is_file():
-        prepare_teacher_masks(
-            config,
-            paths["biased_validation"],
-            mask_path.parent,
-            overwrite=False,
-        )
+    prepare_teacher_masks(
+        config,
+        paths["biased_validation"],
+        mask_path.parent,
+        overwrite=True,
+    )
     masks, mask_binding = load_projected_teacher_masks(
         config, paths["biased_validation"], mask_path
     )
 
     donor_path = output_root / "donor_plans" / "multiclass_same_corner_donors.json"
-    if not donor_path.is_file():
-        prepare_donor_plan(
-            config,
-            paths["biased_validation"],
-            mask_path,
-            donor_path,
-            overwrite=False,
-        )
+    prepare_donor_plan(
+        config,
+        paths["biased_validation"],
+        mask_path,
+        donor_path,
+        overwrite=True,
+    )
     donor = load_and_validate_donor_plan(
         config, paths["biased_validation"], mask_path, donor_path
     )
