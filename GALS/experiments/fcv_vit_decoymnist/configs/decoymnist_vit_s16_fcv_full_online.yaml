@@ -1,0 +1,269 @@
+study:
+  id: fcv_vit_decoymnist_full_online
+  protocol_version: 1
+  dataset: decoymnist
+  objective: online_model_selection_under_reversed_corner_shortcut
+
+cluster:
+  name: tigris
+  account: reu-aisocial
+  partition: tigris
+  gres: gpu:gh200:1
+  conda_environment: /home/ryreu/miniforge3-aarch64/envs/fcv_gh200
+  python: /home/ryreu/miniforge3-aarch64/envs/fcv_gh200/bin/python
+  torch_version: 2.11.0+cu130
+  torchvision_version: 0.26.0+cu130
+  timm_version: 1.0.28
+
+paths:
+  repository_root: /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+  data_root: /home/ryreu/guided_cnn/MNIST_AGAIN/MakeMNIST/data/DecoyMNIST_png
+  teacher_map_root: /home/ryreu/guided_cnn/MNIST_AGAIN/DecoyGen/LearningToLook/code/WeCLIPPlus/results_decoy_mnist_openclip/val/prediction_cmap
+  output_root: /home/ryreu/guided_cnn/logsMNIST/fcv_vit_decoymnist_full_campaign
+  split_manifest_dir: /home/ryreu/guided_cnn/logsMNIST/fcv_vit_decoymnist_full_campaign/split_manifests
+
+data:
+  source_directories:
+    train: train
+    test: test
+  source_counts:
+    train: 60000
+    test: 10000
+  num_classes: 10
+  image_shape:
+    height: 28
+    width: 28
+    channels: 1
+  shortcut_encoding:
+    patch_size: 5
+    corners:
+      - top_left
+      - top_right
+      - bottom_left
+      - bottom_right
+    train_intensity_formula: 255_minus_25_times_label
+    test_intensity_formula: 25_times_label
+    tolerance: 1.0
+    audit_every_source_image: true
+  partition:
+    source_split: train
+    algorithm: class_stratified_largest_remainder
+    split_seed: 0
+    candidate_train_count: 48000
+    biased_validation_count: 6000
+    oracle_validation_source_count: 6000
+    preserve_official_test: true
+  selector_visibility:
+    vanilla:
+      - biased_validation
+    fcv:
+      - biased_validation
+      - fcv_counterfactuals
+    oracle:
+      - oracle_validation_analysis_only
+    posthoc:
+      - test_analysis_only
+  oracle_view:
+    construct_in_memory: true
+    source: oracle_validation_source_analysis_only
+    replace_training_patch_with_test_encoding: true
+    persist_transformed_images: false
+  preprocessing:
+    grayscale_to_rgb: identical_channels
+    resize:
+      size:
+        - 224
+        - 224
+      interpolation: bicubic
+    normalization: imagenet
+    horizontal_flip_probability: 0.0
+  teacher_maps:
+    source: existing_r4rr_openclip_dinovit
+    required_for: biased_validation
+    require_complete_coverage_before_training: true
+    format: voc_colormap_class_ids
+    foreground_class_ids:
+      - 1
+    normalize_to_unit_interval: true
+    resize_interpolation: nearest
+    patch_projection_grid: 14
+    preflight_overlay_count: 20
+    missing_map_policy: fail_with_exact_regeneration_manifest
+
+model:
+  library: timm
+  name: vit_small_patch16_224.augreg_in21k_ft_in1k
+  pretrained: true
+  num_classes: 10
+  image_size: 224
+  patch_size: 16
+  patch_grid_size: 14
+  classification_head: cls_token
+  fine_tune_mode: full
+
+training:
+  optimizer: AdamW
+  learning_rates:
+    - 1.0e-5
+    - 3.0e-5
+    - 1.0e-4
+  weight_decays:
+    - 0.01
+    - 0.05
+    - 0.10
+  crop_scale_mins:
+    - 1.0
+    - 0.8
+    - 0.6
+    - 0.4
+  seeds:
+    - 0
+    - 1
+    - 2
+  epochs: 10
+  batch_size: 256
+  num_workers: 12
+  precision: amp_bfloat16
+  scheduler:
+    name: linear_warmup_cosine
+    warmup_epochs: 1
+    minimum_learning_rate: 0.0
+  augmentation:
+    train_random_resized_crop:
+      enabled: true
+      maximum_scale: 1.0
+      ratio:
+        - 1.0
+        - 1.0
+      interpolation: bicubic
+    horizontal_flip_probability: 0.0
+    mixup: 0.0
+    cutmix: 0.0
+    label_smoothing: 0.0
+  evaluate_every_epoch: true
+
+candidate_pool:
+  unit: online_epoch_state
+  candidate_epochs:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+    - 8
+    - 9
+    - 10
+  expected_training_runs: 108
+  expected_candidate_states: 1080
+  deterministic_order:
+    - learning_rate
+    - weight_decay
+    - crop_scale_min
+    - seed
+  persist_aggregate_metrics_only: true
+  persist_model_checkpoints: false
+  persist_optimizer_states: false
+  persist_resume_states: false
+  retain_selector_winners: false
+
+fcv:
+  intervention_layer: raw_patch_embeddings_before_position
+  evidence_patch_threshold: 0.60
+  background_patch_threshold: 0.10
+  ambiguous_patch_policy: keep_target
+  minimum_background_patches: 20
+  minimum_eligible_fraction: 0.10
+  minimum_eligible_per_class: 20
+  require_decoy_region_safe_background: true
+  reject_any_teacher_evidence_on_decoy: true
+  donor_samples_per_target: 5
+  donor_plan_seed: 0
+  donor_rules:
+    source: biased_validation_only
+    require_non_target_label: true
+    require_same_corner: true
+    require_distinct_donor_labels: true
+    exclude_target_sample: true
+    replacement_rule: mutually_safe_spatial_background
+    apply_target_position_embeddings_after_swap: true
+  primary_selector:
+    name: harmonic_original_counterfactual_accuracy
+    epsilon: 1.0e-12
+    formula: 2ab_over_a_plus_b
+  controls:
+    same_context_donor: true
+    random_mask: true
+    shuffled_teacher_mask: true
+    evidence_swap: true
+    exact_synthetic_mask_analysis_only: true
+    warning_only: true
+
+evaluation:
+  online_every_epoch: true
+  primary_test_metric: accuracy
+  secondary_test_metrics:
+    - balanced_class_accuracy
+    - worst_class_accuracy
+    - per_class_accuracy
+  selectors:
+    vanilla: biased_validation_accuracy
+    fcv: harmonic_original_counterfactual_accuracy
+    oracle: oracle_validation_accuracy
+    posthoc: test_accuracy_analysis_only
+  tie_break: candidate_id_ascending
+  test_metrics_must_not_affect_selection: true
+  gap_closure:
+    metric: test_accuracy
+    denominator_epsilon: 1.0e-12
+    clip_fraction: false
+  rank_analysis:
+    spearman: true
+    kendall_variant: b
+    top_k_values:
+      - 1
+      - 5
+      - 10
+      - 25
+    posthoc_only: true
+
+storage:
+  persistent_output_budget_gib: 1.0
+  node_local_ephemeral_token_banks: true
+  delete_ephemeral_token_banks_after_each_epoch: true
+  persist_token_banks: false
+  persist_patch_embeddings: false
+  persist_per_image_logits: false
+  persist_per_donor_predictions: false
+  persist_duplicate_datasets: false
+  forbidden_suffixes:
+    - .ckpt
+    - .pth
+    - .pt
+  allowed_persistent_artifacts:
+    - manifests
+    - provenance
+    - projected_teacher_masks
+    - donor_plans
+    - aggregate_csv
+    - aggregate_json
+    - logs
+    - plots
+
+execution:
+  array_size: 108
+  max_concurrent_runs: 8
+  cpus_per_task: 12
+  memory_gib: 64
+  time_limit: 1-00:00:00
+  fcv_counterfactual_batch_size: 256
+  control_target_batch_size: 16
+
+reproducibility:
+  deterministic_algorithms: true
+  cudnn_benchmark: false
+  cublas_workspace_config: ':4096:8'
+  manifest_schema_version: 1
+  split_algorithm_version: decoy_stratified_largest_remainder_v1
+  hash_algorithm: sha256
