@@ -1,6 +1,6 @@
 # Tigris Research-Compute Handoff
 
-Last updated: 2026-07-25
+Last updated: 2026-07-26
 
 This document is the infrastructure and workflow handoff for continuing this
 project in a new folder or with a new agent. It records the working Tigris
@@ -36,6 +36,7 @@ disagree, investigate the difference rather than silently choosing one.
 | DecoyMNIST logs | `/home/ryreu/guided_cnn/logsMNIST` |
 | RedMeat logs | `/home/ryreu/guided_cnn/logsRedMeat` |
 | Zero-shot logs | `/home/ryreu/guided_cnn/logsZeroShot` |
+| SpuCo/SpuCoDogs logs | `/home/ryreu/guided_cnn/logsSpuCo` |
 
 Non-negotiable cluster rule: all new Tigris jobs must use
 `--account=reu-aisocial`. Do not submit them under an old account.
@@ -472,17 +473,504 @@ At the last verified download:
 - `spuco_dogs` contained 24,050 images and used about 2.5 GB;
 - the full animals mask pickle used about 9.4 GB.
 
-The full mask pickle should eventually be compacted to a verified dog-only
-artifact. Do not delete the original until the compact artifact has been
-checked for sample coverage, alignment, decoding, and hash/provenance.
+#### 6.5.1 What SpuCoDogs is and what is currently verified
 
-Call these masks **author-provided** unless their annotation provenance has
-been separately verified; do not automatically describe them as manually
-drawn or human-made.
+SpuCoDogs is the dog-only subset of SpuCoAnimals. It is intended to test
+shortcut robustness with naturally occurring images and class-context
+correlations rather than a synthetic pasted-background construction.
+Do not treat its groups, context variable, or split protocol as interchangeable
+with Waterbirds merely because both are shortcut-learning benchmarks.
 
-No production FCV SpuCoDogs study is frozen merely because the data exists.
-Define and review its split, oracle, counterfactual, and selector protocol
-before implementing it.
+The official `SpuCoDogs` loader—not a local naming guess—defines this hierarchy:
+
+```text
+spuco_dogs/
+  {train,val,test}/
+    {small_dogs,big_dogs}/
+      {indoor,outdoor}/
+        INTEGER_MASK_ID.<image extension>
+```
+
+The dog-size directory is the target:
+
+```text
+small_dogs = target label 0
+big_dogs   = target label 1
+```
+
+The context directory is the spurious/environment label:
+
+```text
+indoor  = environment label 0
+outdoor = environment label 1
+```
+
+The official loader source is:
+
+```text
+https://github.com/BigML-CS-UCLA/SpuCo/blob/master/src/spuco/datasets/spuco_dogs.py
+```
+
+Its expected live counts are:
+
+| Split | Small/indoor | Small/outdoor | Big/indoor | Big/outdoor | Total |
+|---|---:|---:|---:|---:|---:|
+| `train` | 10,000 | 500 | 500 | 10,000 | 21,000 |
+| `val` | 500 | 25 | 25 | 500 | 1,050 |
+| `test` | 500 | 500 | 500 | 500 | 2,000 |
+
+Thus the full image count is 24,050. The training and validation splits have
+the intended dog-size/context correlation, while test is balanced over all
+four target-environment cells.
+
+Build an explicit manifest and verify the live tree against all 12 official
+counts before a study. Group labels may be used for Oracle/post-hoc analysis
+only if that is the frozen protocol; they must not silently enter an FCV
+selector advertised as group-agnostic.
+
+A read-only mask audit completed successfully on 2026-07-26 as Tigris job
+`17169`, using repository commit
+`2d2ce1909abe0630cf3403401e324642b5581a79`. It established:
+
+- the mask artifact checksum matches its recorded SHA-256 receipt;
+- the pickle root is a dictionary with 48,100 entries;
+- every entry is a two-dimensional boolean NumPy array;
+- the 48,100 records cover full SpuCoAnimals, while the SpuCoDogs image tree
+  contains 24,050 images;
+- all 24,050 SpuCoDogs images match exactly one mask;
+- no SpuCoDogs image is missing a mask;
+- no SpuCoDogs image has an ambiguous mask match;
+- the remaining 24,050 masks are the non-dog portion of full SpuCoAnimals;
+- masks retain many different native spatial shapes, so no fixed mask
+  resolution may be assumed;
+- loading and auditing the full pickle peaked at approximately 9.97 GiB RSS
+  and took approximately 102 seconds; and
+- the generated visual overlays looked usable but not pixel-perfect.
+
+The successful audit outputs are:
+
+```text
+/home/ryreu/guided_cnn/logsSpuCo/spucodogs_mask_audit/audit_17169/mask_audit_report.json
+/home/ryreu/guided_cnn/logsSpuCo/spucodogs_mask_audit/audit_17169/image_mask_alignment.csv
+/home/ryreu/guided_cnn/logsSpuCo/spucodogs_mask_audit/audit_17169/mask_polarity_overlays.jpg
+```
+
+The corresponding Slurm logs are:
+
+```text
+/home/ryreu/guided_cnn/logsSpuCo/spucodogs_mask_audit/run_logs/audit_17169.out
+/home/ryreu/guided_cnn/logsSpuCo/spucodogs_mask_audit/run_logs/audit_17169.err
+```
+
+The empty `.err` file, successful completion, matching checksum, and complete
+one-to-one image coverage together make the artifact mechanically suitable
+for developing a SpuCoDogs loader.
+
+#### 6.5.2 Mask lookup and polarity
+
+The official SpuCoAnimals loader is the semantic source of truth:
+
+```text
+https://github.com/BigML-CS-UCLA/SpuCo/blob/master/src/spuco/datasets/spuco_animals.py
+```
+
+It derives a numeric mask key from the image filename:
+
+```python
+mask_index = int(Path(image_path).stem)
+spurious_mask = masks[mask_index]
+```
+
+This is not positional lookup within the 24,050-image dog subset. Never use a
+DataFrame row number, DataLoader index, sorted-file index, or split-local index
+as the mask key. Use the integer image filename stem.
+
+The polarity is easy to reverse accidentally:
+
+```text
+True / high mask value   = spurious context/background
+False / low mask value   = core animal/dog
+```
+
+Therefore:
+
+```python
+context_mask = np.asarray(spurious_mask, dtype=bool)
+core_mask = np.logical_not(context_mask)
+```
+
+The audit overlay used red for `True`/background and blue for
+`False`/core-animal pixels. The visual inspection was decent rather than
+perfect. That is acceptable for development, but code should protect uncertain
+object boundaries rather than pretending these are flawless pixel-level
+annotations.
+
+Call the masks **author-provided SpuCoAnimals masks**. Artifact inspection
+proves their structure, alignment, polarity, and visual behavior; it does not
+prove whether they were manually drawn, generated by a model, or refined by a
+particular annotation process. Do not call them human-made or ground truth
+unless the dataset's source documentation establishes that provenance.
+
+#### 6.5.3 Trusted loading example
+
+Python pickle can execute code while loading. Only load the trusted downloaded
+artifact after checking its receipt. Do not load an arbitrary replacement
+pickle from an untrusted source.
+
+Shell integrity check:
+
+```bash
+cd /home/ryreu/guided_cnn/data/spuco
+sha256sum -c spuco_animals_masks.sha256
+```
+
+Minimal Python lookup:
+
+```python
+from pathlib import Path
+import pickle
+import numpy as np
+from PIL import Image
+
+MASK_PICKLE = Path(
+    "/home/ryreu/guided_cnn/data/spuco/spuco_animals_masks.pkl"
+)
+
+with MASK_PICKLE.open("rb") as handle:
+    all_spuco_masks = pickle.load(handle)  # trusted, checksum-verified file
+
+def load_spucodogs_image_and_masks(image_path: str | Path):
+    image_path = Path(image_path)
+    mask_index = int(image_path.stem)
+    context_mask = np.asarray(all_spuco_masks[mask_index], dtype=bool)
+    if context_mask.ndim != 2:
+        raise ValueError(
+            f"Expected a 2-D mask for {image_path}, got {context_mask.shape}"
+        )
+
+    image = Image.open(image_path).convert("RGB")
+    expected = (image.height, image.width)
+    if context_mask.shape != expected:
+        raise ValueError(
+            f"Image/mask geometry mismatch for {image_path}: "
+            f"image={expected}, mask={context_mask.shape}"
+        )
+
+    core_mask = np.logical_not(context_mask)
+    return image, core_mask, context_mask
+```
+
+Keep the geometry assertion during initial development. Do not silently resize
+a mismatched source mask merely to make a run continue; first determine
+whether the mismatch is an orientation, decoding, or lookup error.
+
+Do not reload the 9.4 GB pickle inside every `Dataset.__getitem__`, every
+batch, or every DataLoader worker. At minimum, load it once per process.
+For production arrays, prefer the future compact dog-only artifact described
+below so multiple concurrent tasks do not repeatedly impose 10 GiB resident
+memory and heavy shared-filesystem reads.
+
+#### 6.5.4 Image and mask transforms must be paired
+
+Any spatial image operation must be applied identically to its mask:
+
+- resize;
+- center crop;
+- random resized crop;
+- horizontal flip;
+- padding; and
+- any future geometric augmentation.
+
+Sample random crop/flip parameters once and reuse them for both image and mask.
+Applying independent random transforms destroys alignment.
+
+Use normal antialiased image interpolation for RGB images, but use
+nearest-neighbor interpolation for boolean masks. Bilinear/bicubic mask
+resizing invents fractional boundary values and changes the mask semantics.
+Convert the mask back to boolean after transformation.
+
+Illustrative paired crop:
+
+```python
+import random
+import numpy as np
+from PIL import Image
+from torchvision.transforms import InterpolationMode, RandomResizedCrop
+from torchvision.transforms import functional as TF
+
+def paired_random_resized_crop(image, context_mask, output_size, scale, ratio):
+    mask_image = Image.fromarray(
+        np.asarray(context_mask, dtype=np.uint8) * 255,
+        mode="L",
+    )
+    top, left, height, width = RandomResizedCrop.get_params(
+        image, scale=scale, ratio=ratio
+    )
+    image = TF.resized_crop(
+        image,
+        top,
+        left,
+        height,
+        width,
+        output_size,
+        interpolation=InterpolationMode.BICUBIC,
+        antialias=True,
+    )
+    mask_image = TF.resized_crop(
+        mask_image,
+        top,
+        left,
+        height,
+        width,
+        output_size,
+        interpolation=InterpolationMode.NEAREST,
+    )
+
+    if random.random() < 0.5:
+        image = TF.hflip(image)
+        mask_image = TF.hflip(mask_image)
+
+    context_mask = np.asarray(mask_image) > 127
+    core_mask = np.logical_not(context_mask)
+    return image, core_mask, context_mask
+```
+
+For reproducible experiments, the actual implementation should draw
+randomness from the campaign's seeded generator rather than uncontrolled
+global `random.random()`. The snippet only demonstrates shared geometry.
+Photometric transforms such as normalization or color jitter apply to the
+image, not the boolean mask.
+
+#### 6.5.5 Conversion to ViT patch-token masks
+
+FCV intervenes on patch tokens, while the provided masks are pixel masks.
+After applying the exact evaluation image geometry, aggregate the background
+fraction inside each ViT patch. For a ViT-S/16 model at `224x224`, the patch
+grid is `14x14`, but code should derive patch size/grid from the actual model
+and transformed input rather than hard-code it.
+
+Conceptually:
+
+```python
+# context_mask is HxW boolean after the paired image transform.
+context_fraction_per_patch = average_pool(context_mask.float(), patch_size)
+```
+
+Because the masks are imperfect near dog boundaries, use a conservative,
+predeclared occupancy rule:
+
+- high-confidence context tokens: context fraction at or above a frozen
+  context threshold;
+- high-confidence core tokens: context fraction at or below a frozen core
+  threshold;
+- mixed/boundary tokens: excluded from counterfactual replacement.
+
+The exact occupancy thresholds are scientific hyperparameters/protocol
+choices. Freeze them before viewing selector/test results, record them in the
+study configuration, and test them in preflight. Do not quietly tune them
+against test accuracy. A conservative boundary exclusion is preferable to
+replacing tokens that may contain part of the dog.
+
+Preserve token ordering:
+
+- never include the CLS token in a spatial patch mask;
+- verify the flattened mask length equals the number of patch tokens;
+- verify row-major patch ordering matches the model's token ordering;
+- record the number/fraction of core, context, and excluded boundary tokens;
+- reject or explicitly mark samples with no eligible context tokens; and
+- use the target image's positional embeddings after donor-token replacement,
+  following the frozen FCV intervention definition.
+
+#### 6.5.6 Audit tooling and rerunning the audit
+
+The checked-in read-only audit is:
+
+```text
+GALS/experiments/spucodogs_mask_audit/audit_spucodogs_masks.py
+GALS/experiments/spucodogs_mask_audit/slurm/audit_spucodogs_masks.sbatch
+GALS/experiments/spucodogs_mask_audit/submit_mask_audit.sh
+GALS/experiments/spucodogs_mask_audit/README.md
+```
+
+Launch it on Tigris with:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+bash experiments/spucodogs_mask_audit/submit_mask_audit.sh
+```
+
+It is CPU-only and requests 128 GB RAM because it intentionally inspects the
+full 9.4 GB trusted pickle. It does not alter, compact, or delete either source
+artifact. Important outputs are:
+
+```text
+mask_audit_report.json
+image_mask_alignment.csv
+mask_polarity_overlays.jpg
+```
+
+A future audit should additionally make exact image-versus-mask shape
+agreement an explicit all-sample acceptance gate, even though current
+alignment and visual checks succeeded.
+
+That second-stage audit is now checked in:
+
+```text
+GALS/experiments/spucodogs_mask_audit/deep_audit_spucodogs.py
+GALS/experiments/spucodogs_mask_audit/slurm/deep_audit_spucodogs.sbatch
+GALS/experiments/spucodogs_mask_audit/submit_deep_audit.sh
+```
+
+Run it with:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+bash experiments/spucodogs_mask_audit/submit_deep_audit.sh
+```
+
+It is a read-only, CPU-only job using account `reu-aisocial`, partition
+`tigris`, 8 CPUs, 128 GiB RAM, the `fcv_gh200` environment, and a 12-hour
+ceiling. It verifies:
+
+- all 12 official split/target/environment counts;
+- every filename's integer mask key and key uniqueness in the dog tree;
+- every image decode and every source image/mask shape pair;
+- raw versus EXIF-transposed geometry;
+- missing, malformed, empty, full, border-touching, fragmented, and
+  broad-area-warning masks;
+- exact file and decoded-pixel duplicates across splits;
+- perceptual near-duplicate review candidates across splits;
+- available EXIF/source identity evidence;
+- reusable local loaders/manifests in the checked-out repository;
+- mask and archive integrity receipt status;
+- a canonical digest for the extracted image tree; and
+- free-space safety for compact-artifact construction and validation.
+
+Its principal outputs are:
+
+```text
+spucodogs_deep_audit_report.json
+official_group_counts.csv
+image_mask_inventory.csv
+cross_split_exact_duplicates.csv
+cross_split_perceptual_duplicate_candidates.csv
+mask_quality_review.jpg
+repository_reuse_candidates.json
+```
+
+The dHash CSV is a candidate screen, not proof that images share identity.
+The gallery is required because a mask alone cannot prove that it visually
+contains every part of the dog without independent boxes or segmentations.
+Inspect both before freezing a leakage claim or mask-quality statement.
+
+#### 6.5.7 Compact dog-only production artifact
+
+The full pickle should eventually be converted once into a compact,
+authenticated, dog-only artifact. The audit reports that filename-based
+compaction is mechanically safe, but the converter must still be reviewed and
+tested.
+
+A good compact format should:
+
+- retain only the 24,050 mask IDs referenced by SpuCoDogs;
+- store the numeric image ID and original `(height, width)`;
+- preserve boolean values exactly, preferably with packed bits;
+- use deterministic ordering;
+- avoid arbitrary-code execution during normal loading if practical;
+- include a manifest mapping every relative image path to its numeric mask ID;
+- include source-pickle SHA-256, converter commit, conversion command, and
+  output SHA-256;
+- support exact reconstruction tests against the source pickle;
+- be shardable or lazily readable so workers do not load all masks; and
+- fail on missing, duplicate, malformed, or geometry-mismatched records.
+
+Do not delete the original pickle after merely producing the compact file.
+First verify:
+
+1. all 24,050 images have one reconstructed mask;
+2. every reconstructed mask is bit-exact with the source;
+3. every reconstructed shape agrees with its corresponding image;
+4. polarity remains `True=context`, `False=core`;
+5. visual overlays still align;
+6. the production DataLoader passes multi-worker tests;
+7. the compact artifact and manifest have recorded hashes; and
+8. at least one independent copy or retrieval path exists.
+
+Only then should deletion of the 9.4 GB source be considered, and deletion
+should be an explicit owner decision rather than automatic cleanup.
+
+#### 6.5.8 Required SpuCoDogs preflight for a future FCV study
+
+No production FCV SpuCoDogs study is frozen merely because the data and masks
+exist. Define and review its split, Oracle, context-inference, donor,
+counterfactual, and selector protocol before implementing or launching it.
+
+At minimum, preflight must validate:
+
+- dataset root, official split metadata, and expected image count;
+- class, split, and analysis-only group counts;
+- untouched test isolation;
+- mask source checksum and compact-artifact checksum, if used;
+- numeric filename stems and unique mask lookup for every included image;
+- exact image/mask source geometry;
+- paired crop/flip behavior;
+- transformed mask dimensions;
+- ViT patch-grid dimensions and CLS-token exclusion;
+- core/context/boundary token occupancy statistics by split and class;
+- eligibility/exclusion counts and reasons;
+- fixed donor pools without forbidden group/test information;
+- deterministic donor plans and hashes;
+- one real online FCV pass on a GH200;
+- output/storage projections; and
+- a visual overlay sample from every class, split, and relevant context.
+
+The fact that masks are author-provided does not authorize use of hidden group
+labels in the primary selector. Keep Vanilla/FCV-visible artifacts separate
+from Oracle/test-analysis-only artifacts exactly as in the existing online
+Waterbirds and DecoyMNIST FCV studies.
+
+#### 6.5.9 Direct answers and remaining evidence boundaries
+
+The following questions are already answered by the official loader and
+completed first audit:
+
+- **Hierarchy and filename:** split / dog-size / context / integer filename.
+- **Labels:** `small_dogs=0`, `big_dogs=1`; `indoor=0`, `outdoor=1`.
+- **Official counts:** the 12 cells shown in Section 6.5.1, totaling 24,050.
+- **Pickle schema:** `dict` with 48,100 entries.
+- **Mask schema:** every record inspected is a two-dimensional NumPy `bool`
+  array, not polygon, RLE, tensor, or encoded image.
+- **Lookup:** `masks[int(image filename stem)]`; never row or dataset order.
+- **Polarity:** `True=context/background`, `False=core/animal`.
+- **Dog coverage:** all 24,050 dog images map uniquely; no missing or ambiguous
+  dog mask.
+- **Dog-only filtering:** the dog tree's numeric stems select exactly the
+  needed half of the full 48,100-mask SpuCoAnimals dictionary.
+- **Mask receipt:** the live pickle SHA-256 matches its recorded receipt.
+- **Prior free space:** 72 GiB was free during job 17169, but current free
+  space must always be rechecked before compaction.
+
+Important boundaries:
+
+- A materialized Python dictionary has unique keys. It can prove that the
+  final artifact has 48,100 unique dictionary entries, but cannot reveal
+  whether a hypothetical earlier serializer overwrote a duplicate key.
+  More relevantly, the deep audit checks that no two dog images reuse the same
+  numeric mask ID.
+- The integer stem is documented as a mask lookup ID, not dog identity, breed,
+  capture sequence, or collection identity. Do not invent a leakage-resistant
+  identity split from nearby integers.
+- The official loader applies a mask to the natively decoded image before its
+  `Resize((256,256))` and `CenterCrop((224,224))`. This strongly implies native
+  pre-resize geometry, but the deep audit verifies every live image/mask pair
+  and explicitly separates raw from EXIF-transposed matches.
+- Exact/perceptual split duplicates, empty/fragmented/area-warning masks,
+  source-identity metadata, the archive receipt's live-verification status,
+  and the current storage projection require the second-stage audit output.
+- “Visibly omits part of the dog” is not fully machine-resolvable from these
+  masks alone. The deep audit generates a stratified and extreme-case gallery
+  for a documented human review; do not present that review as an independent
+  ground-truth segmentation benchmark.
 
 ### 6.6 UrbanCars
 
@@ -514,6 +1002,7 @@ Use dataset-specific persistent roots:
 /home/ryreu/guided_cnn/logsMNIST
 /home/ryreu/guided_cnn/logsRedMeat
 /home/ryreu/guided_cnn/logsZeroShot
+/home/ryreu/guided_cnn/logsSpuCo
 ```
 
 Current FCV campaign roots:
@@ -522,6 +1011,7 @@ Current FCV campaign roots:
 /home/ryreu/guided_cnn/logsWaterbird/fcv_vit_waterbirds100_first_study
 /home/ryreu/guided_cnn/logsMNIST/fcv_vit_decoymnist_susceptibility
 /home/ryreu/guided_cnn/logsMNIST/fcv_vit_decoymnist_full_campaign
+/home/ryreu/guided_cnn/logsSpuCo/spucodogs_mask_audit
 ```
 
 Organize a new campaign under one unique root:
@@ -554,8 +1044,10 @@ stdout/stderr files.
 
 ## 8. Storage constraints and scratch policy
 
-Storage is a real constraint. At the last SpuCoDogs check, the home filesystem
-had roughly 31 GB free. That number is time-sensitive; always check live:
+Storage is a real constraint. During the completed SpuCoDogs mask audit on
+2026-07-26, the home filesystem reported approximately 72 GB free; earlier
+checks were substantially lower. This number is highly time-sensitive and
+must always be checked live:
 
 ```bash
 df -h /home/ryreu
@@ -1138,6 +1630,24 @@ for p in \
 done
 ```
 
+SpuCoDogs mask inputs:
+
+```bash
+for p in \
+  /home/ryreu/guided_cnn/data/spuco/spuco_animals_masks.pkl \
+  /home/ryreu/guided_cnn/data/spuco/spuco_animals_masks.sha256 \
+  /home/ryreu/guided_cnn/data/spuco/spuco_dogs_archive.sha256; do
+  if [[ -f "$p" ]]; then
+    echo "OK $p"
+  else
+    echo "MISSING $p"
+  fi
+done
+
+cd /home/ryreu/guided_cnn/data/spuco
+sha256sum -c spuco_animals_masks.sha256
+```
+
 Do not launch a large campaign until these basics and the experiment-specific
 preflight agree.
 
@@ -1157,4 +1667,3 @@ preflight agree.
 - Do not save large checkpoint collections unless the study genuinely needs
   them and the owner explicitly accepts the storage cost.
 - When uncertain, preserve provenance and fail with an exact diagnostic.
-
