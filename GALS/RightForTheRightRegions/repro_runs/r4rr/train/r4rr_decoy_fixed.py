@@ -20,6 +20,7 @@ import os
 import random
 import re
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -335,6 +336,7 @@ def train_one_seed(args, seed, full_train_guided, full_train_plain, true_test, d
         "test_worst_class_acc": test_worst_class_acc,
         "test_class_acc": test_class_acc,
         "test_loss": test_loss,
+        "state_dict": best_weights,
     }
 
 
@@ -356,6 +358,12 @@ def main():
     parser.add_argument("--split-seed", type=int, default=0)
     parser.add_argument("--num-workers", type=int, default=1)
     parser.add_argument("--print-every", type=int, default=1)
+    parser.add_argument(
+        "--save-dir",
+        type=str,
+        default="",
+        help="Optional directory for one best-validation checkpoint per seed.",
+    )
     parser.add_argument("--no-cuda", action="store_true", default=False)
     args = parser.parse_args()
 
@@ -398,6 +406,8 @@ def main():
     )
 
     rows = []
+    save_dir = Path(args.save_dir).expanduser().resolve() if args.save_dir else None
+    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     for i in range(args.n_seeds):
         seed = args.seed_start + i
         row = train_one_seed(
@@ -410,6 +420,31 @@ def main():
             loader_kwargs=loader_kwargs,
         )
         rows.append(row)
+        if save_dir is not None:
+            save_dir.mkdir(parents=True, exist_ok=True)
+            ckpt_path = save_dir / (
+                f"decoy_r4rr_seed{seed}_bestval_{row['best_val_acc']:.2f}_"
+                f"epoch{row['best_epoch']}_{run_ts}.pth"
+            )
+            torch.save(
+                {
+                    "model_state_dict": row["state_dict"],
+                    "seed": int(seed),
+                    "best_epoch": int(row["best_epoch"]),
+                    "best_val_acc": float(row["best_val_acc"]),
+                    "best_val_loss": float(row["best_val_loss"]),
+                    "test_acc": float(row["test_acc"]),
+                    "test_balanced_class_acc": float(row["test_balanced_class_acc"]),
+                    "test_worst_class_acc": float(row["test_worst_class_acc"]),
+                    "test_class_acc": [
+                        float(x)
+                        for x in np.asarray(row["test_class_acc"], dtype=np.float64).tolist()
+                    ],
+                    "args": vars(args),
+                },
+                ckpt_path,
+            )
+            print(f"[CKPT] seed={seed} path={ckpt_path}")
         print(
             f"seed={seed} best_epoch={row['best_epoch']} "
             f"best_val_acc={row['best_val_acc']:.2f}% test_acc={row['test_acc']:.2f}% "
