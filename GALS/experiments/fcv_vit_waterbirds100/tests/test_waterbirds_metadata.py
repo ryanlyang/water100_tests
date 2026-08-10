@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import hashlib
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -43,12 +44,20 @@ class WaterbirdsMetadataTest(unittest.TestCase):
             for label, context in label_context_pairs:
                 folder = f"{metadata_index + 1:03d}.Synthetic_Bird"
                 basename = f"Synthetic_Bird_{metadata_index:04d}.jpg"
-                relative = f"{folder}/{basename}"
+                # Exercise the producer's complete relative-path flattening.
+                # The old fixture had only one directory level, for which the
+                # incomplete parent+basename resolver happened to work.
+                relative = f"nested.images/{folder}/{basename}"
                 image_path = self.data_root / relative
                 image_path.parent.mkdir(parents=True, exist_ok=True)
                 image_path.touch()
-                mask_name = f"{folder.replace('.', '_')}_{Path(basename).stem}.png"
-                (self.teacher_root / mask_name).touch()
+                relative_without_extension = str(Path(relative).with_suffix(""))
+                flattened = relative_without_extension.replace("/", "_")
+                image_id = re.sub(r"[^A-Za-z0-9_-]+", "_", flattened).strip("_")
+                # The real producer's eval list is metadata split 0 + 1. Test
+                # masks are absent by contract unless generated separately.
+                if split in {0, 1}:
+                    (self.teacher_root / f"{image_id}.png").touch()
                 rows.append(
                     {
                         "img_filename": relative,
@@ -115,12 +124,31 @@ class WaterbirdsMetadataTest(unittest.TestCase):
             self.assertEqual(set(analysis_only["group"]), {0, 1, 2, 3})
 
         self.assertTrue(holdout["teacher_map_exists"].all())
+        self.assertTrue(oracle["teacher_map_exists"].all())
+        self.assertFalse(test["teacher_map_exists"].any())
         self.assertEqual(
             result["summary"]["splits"]["biased_validation"]["aligned_fraction"],
             1.0,
         )
         for split in result["summary"]["splits"].values():
             self.assertRegex(split["image_set_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_ambiguous_real_and_legacy_layouts_fail_closed(self) -> None:
+        config = load_and_validate_config(self.config_path)
+        metadata = pd.read_csv(self.metadata_path)
+        row = metadata.loc[metadata["split"] == 0].iloc[0]
+        relative = Path(row["img_filename"])
+        legacy_name = (
+            f"{relative.parent.name.replace('.', '_')}_{relative.stem}.png"
+        )
+        # The producer-flat map already exists from setUp. Adding a distinct
+        # legacy-layout map must be diagnosed instead of silently choosing one.
+        (self.teacher_root / legacy_name).touch()
+        with self.assertRaisesRegex(ValueError, "Ambiguous teacher maps"):
+            prepare_waterbirds100_manifests(
+                config,
+                self.root / "ambiguous_manifests",
+            )
 
     def test_split_indices_are_reproducible(self) -> None:
         config = load_and_validate_config(self.config_path)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Sequence, Tuple
 
@@ -78,25 +79,68 @@ def _resolve_image_path(data_root: Path, image_name: str) -> Path:
     return candidates[0].resolve()
 
 
+def _producer_flat_teacher_map_name(image_name: str) -> str:
+    """Reproduce the producer's collision-free Waterbirds image ID.
+
+    The producer flattens the complete dataset-relative path without its image
+    extension, replaces path separators with underscores, sanitizes remaining
+    punctuation, and appends ``.png`` when saving ``prediction_cmap``. The
+    manifest preflight separately rejects flattened-name collisions rather
+    than attempting to reconstruct the producer's traversal-dependent suffix.
+    """
+
+    normalized = str(image_name).strip().replace("\\", "/")
+    if Path(normalized).is_absolute():
+        raise MetadataError(
+            "Waterbirds metadata img_filename must be relative to the dataset "
+            f"root for VLM-mask resolution, found {image_name!r}."
+        )
+    normalized = normalized.lstrip("/")
+    relative = Path(normalized)
+    relative_without_extension = str(relative.with_suffix("")).replace("\\", "/")
+    flattened = relative_without_extension.replace("/", "_")
+    image_id = re.sub(r"[^A-Za-z0-9_-]+", "_", flattened).strip("_")
+    if not image_id:
+        raise MetadataError(
+            f"Could not derive a WeCLIP image ID from metadata path {image_name!r}."
+        )
+    return image_id + ".png"
+
+
 def _teacher_map_candidates(teacher_root: Path, image_name: str) -> Sequence[Path]:
-    relative = Path(str(image_name).strip().lstrip("/"))
+    relative = Path(str(image_name).strip().replace("\\", "/").lstrip("/"))
     parent = relative.parent.name
     parent_underscored = parent.replace(".", "_")
     base = relative.stem + ".png"
-    flat_name = f"{parent_underscored}_{relative.stem}.png"
-    return (
-        teacher_root / flat_name,
+    producer_flat_name = _producer_flat_teacher_map_name(image_name)
+    legacy_flat_name = f"{parent_underscored}_{relative.stem}.png"
+    candidates = (
+        teacher_root / producer_flat_name,
+        teacher_root / legacy_flat_name,
         teacher_root / parent_underscored / base,
         teacher_root / parent / base,
         teacher_root / relative.with_suffix(".png"),
     )
+    # For the usual one-directory Waterbirds path, producer_flat_name and
+    # legacy_flat_name are identical. Preserve priority while removing exact
+    # duplicates.
+    return tuple(dict.fromkeys(candidates))
 
 
 def _resolve_teacher_map(teacher_root: Path, image_name: str) -> Tuple[Path, bool]:
     candidates = _teacher_map_candidates(teacher_root, image_name)
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate.resolve(), True
+    matches = list(
+        dict.fromkeys(
+            candidate.resolve() for candidate in candidates if candidate.is_file()
+        )
+    )
+    if len(matches) == 1:
+        return matches[0], True
+    if len(matches) > 1:
+        raise MetadataError(
+            f"Ambiguous teacher maps for metadata image {image_name!r}: "
+            + ", ".join(str(path) for path in matches)
+        )
     return candidates[0].resolve(), False
 
 
@@ -273,6 +317,20 @@ def prepare_waterbirds100_manifests(
     split_column = columns["split"]
     _validate_binary_column(metadata, label_column)
     _validate_binary_column(metadata, context_column)
+
+    producer_names = metadata[image_column].map(_producer_flat_teacher_map_name)
+    duplicate_names = producer_names.duplicated(keep=False)
+    if duplicate_names.any():
+        collisions = metadata.loc[
+            duplicate_names, ["metadata_index", image_column]
+        ].copy()
+        collisions["producer_mask_name"] = producer_names.loc[duplicate_names]
+        raise MetadataError(
+            "Waterbirds metadata paths collide after WeCLIP full-path flattening. "
+            "The producer resolves these with traversal-dependent suffixes, so a "
+            "saved producer manifest is required instead of guessing:\n"
+            + collisions.to_string(index=False)
+        )
 
     train_source = metadata[
         metadata[split_column].astype(int) == int(split_values["train"])

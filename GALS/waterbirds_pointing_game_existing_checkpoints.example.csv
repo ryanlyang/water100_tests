@@ -1,0 +1,3 @@
+dataset,method,seed,checkpoint,stage1_checkpoint
+95,elrep,4,/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/ElRep_Checkpoints/wb95_seed4_pointing_game/elrep_resnet50_theta13.33258e-05_theta21.81017e-05_seed4_20260627_005345.pth,
+100,elrep,4,/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/ElRep_Checkpoints/wb100_seed4_pointing_game/elrep_resnet50_theta14.17412e-05_theta22.54334e-06_seed4_20260627_005607.pth,

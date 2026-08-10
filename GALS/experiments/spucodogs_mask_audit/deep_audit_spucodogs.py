@@ -979,6 +979,10 @@ def main() -> None:
         else ["hash_kind", "digest", "image_count", "splits", "relative_paths"]
     )
     write_csv(exact_duplicates_csv, exact_fields, exact_rows)
+    exact_underlying_path_groups = {
+        tuple(sorted(str(row["relative_paths"]).split("|")))
+        for row in exact_rows
+    }
 
     perceptual_rows: list[dict[str, Any]] = []
     perceptual_truncated = False
@@ -1094,7 +1098,15 @@ def main() -> None:
     }
     report["split_leakage_screen"] = {
         "canonical_image_manifest_sha256": manifest_digest.hexdigest(),
-        "cross_split_exact_duplicate_group_count": len(exact_rows),
+        "cross_split_exact_hash_channel_row_count": len(exact_rows),
+        "cross_split_exact_duplicate_group_count": len(
+            exact_underlying_path_groups
+        ),
+        "exact_duplicate_count_note": (
+            "The hash-channel row count can be twice the underlying path-group "
+            "count when the same pair matches both file SHA-256 and decoded-pixel "
+            "SHA-256."
+        ),
         "cross_split_exact_duplicates_csv": str(exact_duplicates_csv),
         "perceptual_hash": (
             "64-bit dHash after EXIF transpose; this is a high-recall review "
@@ -1183,7 +1195,7 @@ def main() -> None:
         "all_masks_match_raw_geometry": report["all_sample_audit"][
             "all_masks_match_raw_decoded_image_geometry"
         ],
-        "no_cross_split_exact_duplicates": len(exact_rows) == 0,
+        "no_cross_split_exact_duplicates": len(exact_underlying_path_groups) == 0,
         "perceptual_duplicate_review_required": len(perceptual_rows) > 0,
         "mask_quality_gallery_review_required": True,
         "safe_storage_projection": report["storage_projection"][
@@ -1208,7 +1220,8 @@ def main() -> None:
     )
     print(
         "[RESULT] "
-        f"cross_split_exact_groups={len(exact_rows)} "
+        f"cross_split_exact_groups={len(exact_underlying_path_groups)} "
+        f"exact_hash_rows={len(exact_rows)} "
         f"perceptual_candidates={len(perceptual_rows)} "
         f"storage_safe={report['storage_projection']['safe_for_compaction_and_temporary_validation']}"
     )

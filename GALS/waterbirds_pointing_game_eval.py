@@ -3,10 +3,11 @@
 Compute Pointing Game accuracy on Waterbirds for multiple trained methods.
 
 Supported methods:
-- guided
+- r4rr (guided)
 - vanilla
 - elrep
-- gals (binary single-logit GALS model from this repo)
+- gals/upweight (binary single-logit GALS models from this repo)
+- abn
 - afr (AFR stage-1 model, optional stage-2 last-layer override)
 
 For each method and dataset, this script reports:
@@ -19,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import importlib.util
 import json
 import os
 import random
@@ -47,6 +47,7 @@ if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
 from models.resnet import resnet50 as gals_resnet50  # noqa: E402
+from models.resnet_abn import resnet50 as abn_resnet50  # noqa: E402
 
 
 SPLIT_MAP = {"train": 0, "val": 1, "test": 2}
@@ -146,6 +147,18 @@ def extract_state_dict(ckpt_obj: object) -> Dict[str, torch.Tensor]:
     raise RuntimeError("Could not extract model state_dict from checkpoint.")
 
 
+def torch_load_compat(path: Path, device: torch.device):
+    try:
+        return torch.load(path, map_location=device)
+    except Exception as exc:
+        if "Weights only load failed" not in str(exc):
+            raise
+        try:
+            return torch.load(path, map_location=device, weights_only=False)
+        except TypeError:
+            return torch.load(path, map_location=device)
+
+
 def align_state_dict_keys(state_dict: Dict[str, torch.Tensor], model: nn.Module) -> Dict[str, torch.Tensor]:
     model_keys = list(model.state_dict().keys())
     ckpt_keys = list(state_dict.keys())
@@ -222,17 +235,6 @@ class FeatureHook:
         self.handle.remove()
 
 
-class GALSBinaryCAMModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.net = gals_resnet50(pretrained=False, return_fmaps=True)
-        self.net.fc = nn.Linear(self.net.fc.in_features, 1)
-
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        logits, fmaps = self.net(x)
-        return logits, fmaps
-
-
 class GuidedResNetCAM(nn.Module):
     """
     Replica of run_guided_waterbird.ResNetCAM state_dict structure:
@@ -259,24 +261,6 @@ class GuidedResNetCAM(nn.Module):
         return logits, self.features
 
 
-def _import_afr_models(afr_root: Path):
-    init_file = afr_root / "models" / "__init__.py"
-    if not init_file.is_file():
-        raise FileNotFoundError(f"AFR models package not found: {init_file}")
-
-    spec = importlib.util.spec_from_file_location(
-        "afr_models",
-        str(init_file),
-        submodule_search_locations=[str(init_file.parent)],
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Failed to create import spec for AFR models from {init_file}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["afr_models"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 class MethodRunnerBase:
     name: str
 
@@ -295,10 +279,10 @@ class GuidedRunner(MethodRunnerBase):
     def __init__(self, checkpoint: Path, num_classes: int, device: torch.device):
         self.device = device
         self.model = GuidedResNetCAM(num_classes).to(device)
-        state = torch.load(checkpoint, map_location=device)
+        state = torch_load_compat(checkpoint, device)
         state_dict = extract_state_dict(state) if isinstance(state, dict) else state
         state_dict = align_state_dict_keys(state_dict, self.model)
-        self.model.load_state_dict(state_dict, strict=False)
+        self.model.load_state_dict(state_dict, strict=True)
         self.model.eval()
 
     @torch.no_grad()
@@ -320,10 +304,10 @@ class VanillaRunner(MethodRunnerBase):
         self.device = device
         self.model = models.resnet50(pretrained=False).to(device)
         self.model.fc = nn.Linear(self.model.fc.in_features, num_classes).to(device)
-        state = torch.load(checkpoint, map_location=device)
+        state = torch_load_compat(checkpoint, device)
         state_dict = extract_state_dict(state) if isinstance(state, dict) else state
         state_dict = align_state_dict_keys(state_dict, self.model)
-        self.model.load_state_dict(state_dict, strict=False)
+        self.model.load_state_dict(state_dict, strict=True)
         self.model.eval()
         self.hook = FeatureHook(self.model.layer4)  # type: ignore[attr-defined]
 
@@ -349,11 +333,14 @@ class GALSRunner(MethodRunnerBase):
 
     def __init__(self, checkpoint: Path, device: torch.device):
         self.device = device
-        self.model = GALSBinaryCAMModel().to(device)
-        ckpt = torch.load(checkpoint, map_location=device)
+        # GALS checkpoints contain direct ResNet keys (conv1.*, layer1.*, fc.*),
+        # so load into the direct model rather than a wrapper with a "net." prefix.
+        self.model = gals_resnet50(pretrained=False, return_fmaps=True).to(device)
+        self.model.fc = nn.Linear(self.model.fc.in_features, 1).to(device)
+        ckpt = torch_load_compat(checkpoint, device)
         state = extract_state_dict(ckpt)
         state = align_state_dict_keys(state, self.model)
-        self.model.load_state_dict(state, strict=False)
+        self.model.load_state_dict(state, strict=True)
         self.model.eval()
 
     @torch.no_grad()
@@ -365,10 +352,39 @@ class GALSRunner(MethodRunnerBase):
         pred = int((prob_1 >= 0.5).long().item())
         target = int(label if target_mode == "label" else pred)
 
-        w_pos = self.model.net.fc.weight[0]  # type: ignore[attr-defined]
+        w_pos = self.model.fc.weight[0]  # type: ignore[attr-defined]
         class_weight = w_pos if target == 1 else (-w_pos)
         cam = compute_cam(feats[0], class_weight)
         return pred, target, cam
+
+
+class ABNRunner(MethodRunnerBase):
+    name = "abn"
+
+    def __init__(self, checkpoint: Path, device: torch.device):
+        self.device = device
+        self.model = abn_resnet50(
+            pretrained=False,
+            num_classes=1,
+            add_after_attention=True,
+        ).to(device)
+        ckpt = torch_load_compat(checkpoint, device)
+        state = extract_state_dict(ckpt)
+        state = align_state_dict_keys(state, self.model)
+        self.model.load_state_dict(state, strict=True)
+        self.model.eval()
+
+    @torch.no_grad()
+    def predict_and_saliency(
+        self, image_tensor: torch.Tensor, label: int, target_mode: str
+    ) -> Tuple[int, int, np.ndarray]:
+        _attention_logits, logits, attention_data = self.model(image_tensor)
+        prob_1 = torch.sigmoid(logits[:, 0])
+        pred = int((prob_1 >= 0.5).long().item())
+        target = int(label if target_mode == "label" else pred)
+        # ABN's own learned spatial attention is the method's explanation map.
+        attention = attention_data[0][0, 0]
+        return pred, target, normalize_map(attention.detach().cpu().numpy())
 
 
 class AFRRunner(MethodRunnerBase):
@@ -383,16 +399,19 @@ class AFRRunner(MethodRunnerBase):
         device: torch.device,
     ):
         self.device = device
-        afr_models = _import_afr_models(afr_root)
-        self.model = getattr(afr_models, "imagenet_resnet50_pretrained")(num_classes).to(device)
+        # AFR's imagenet_resnet50_pretrained constructor is torchvision
+        # ResNet-50 with its final layer replaced. Building it directly avoids
+        # importing unrelated optional AFR dependencies (for example timm).
+        self.model = models.resnet50(pretrained=False).to(device)
+        self.model.fc = nn.Linear(self.model.fc.in_features, num_classes).to(device)
 
-        stage1 = torch.load(stage1_checkpoint, map_location=device)
+        stage1 = torch_load_compat(stage1_checkpoint, device)
         state_dict = extract_state_dict(stage1) if isinstance(stage1, dict) else stage1
         state_dict = align_state_dict_keys(state_dict, self.model)
-        self.model.load_state_dict(state_dict, strict=False)
+        self.model.load_state_dict(state_dict, strict=True)
 
         if stage2_last_layer_checkpoint is not None:
-            ll_obj = torch.load(stage2_last_layer_checkpoint, map_location=device)
+            ll_obj = torch_load_compat(stage2_last_layer_checkpoint, device)
             ll_state = extract_state_dict(ll_obj) if isinstance(ll_obj, dict) else ll_obj
             if "weight" in ll_state and "bias" in ll_state:
                 with torch.no_grad():
@@ -592,7 +611,7 @@ def evaluate_dataset(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Pointing Game evaluator for Waterbirds 95/100 across vanilla, ElRep, GALS, guided, AFR."
+        description="Pointing Game evaluator for Waterbirds 95/100 trained baselines."
     )
     parser.add_argument(
         "--datasets",
@@ -627,6 +646,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--elrep100-ckpt", default="")
     parser.add_argument("--gals95-ckpt", default="")
     parser.add_argument("--gals100-ckpt", default="")
+    parser.add_argument("--upweight95-ckpt", default="")
+    parser.add_argument("--upweight100-ckpt", default="")
+    parser.add_argument("--abn95-ckpt", default="")
+    parser.add_argument("--abn100-ckpt", default="")
+    parser.add_argument("--r4rr95-ckpt", default="")
+    parser.add_argument("--r4rr100-ckpt", default="")
 
     parser.add_argument("--afr-root", default=str((PARENT_DIR / "afr").resolve()))
     parser.add_argument("--afr95-stage1-ckpt", default="")
@@ -634,7 +659,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--afr95-last-layer-ckpt", default="")
     parser.add_argument("--afr100-last-layer-ckpt", default="")
 
-    parser.add_argument("--methods", default="guided,vanilla,gals,afr")
+    parser.add_argument("--methods", default="r4rr,vanilla,elrep,gals,upweight,abn,afr")
     parser.add_argument("--output-dir", default="", help="If empty, writes under <repo_parent>/logsWaterbird/")
     return parser.parse_args()
 
@@ -657,24 +682,29 @@ def _build_runners_for_dataset(
     runners: Dict[str, MethodRunnerBase] = {}
 
     if dataset_tag == "95":
-        guided_ckpt = args.guided95_ckpt
+        guided_ckpt = args.r4rr95_ckpt or args.guided95_ckpt
         vanilla_ckpt = args.vanilla95_ckpt
         elrep_ckpt = args.elrep95_ckpt
         gals_ckpt = args.gals95_ckpt
+        upweight_ckpt = args.upweight95_ckpt
+        abn_ckpt = args.abn95_ckpt
         afr_stage1_ckpt = args.afr95_stage1_ckpt
         afr_last_layer_ckpt = args.afr95_last_layer_ckpt
     else:
-        guided_ckpt = args.guided100_ckpt
+        guided_ckpt = args.r4rr100_ckpt or args.guided100_ckpt
         vanilla_ckpt = args.vanilla100_ckpt
         elrep_ckpt = args.elrep100_ckpt
         gals_ckpt = args.gals100_ckpt
+        upweight_ckpt = args.upweight100_ckpt
+        abn_ckpt = args.abn100_ckpt
         afr_stage1_ckpt = args.afr100_stage1_ckpt
         afr_last_layer_ckpt = args.afr100_last_layer_ckpt
 
-    if "guided" in methods:
+    if "guided" in methods or "r4rr" in methods:
         p = _resolve_ckpt(guided_ckpt)
         if p is not None:
-            runners["guided"] = GuidedRunner(p, num_classes=num_classes, device=device)
+            key = "r4rr" if "r4rr" in methods else "guided"
+            runners[key] = GuidedRunner(p, num_classes=num_classes, device=device)
         else:
             print(f"[WARN] Missing guided checkpoint for dataset {dataset_tag}; skipping guided.", flush=True)
 
@@ -698,6 +728,23 @@ def _build_runners_for_dataset(
             runners["gals"] = GALSRunner(p, device=device)
         else:
             print(f"[WARN] Missing GALS checkpoint for dataset {dataset_tag}; skipping gals.", flush=True)
+
+    if "upweight" in methods:
+        p = _resolve_ckpt(upweight_ckpt)
+        if p is not None:
+            runners["upweight"] = GALSRunner(p, device=device)
+        else:
+            print(
+                f"[WARN] Missing Upweight checkpoint for dataset {dataset_tag}; skipping upweight.",
+                flush=True,
+            )
+
+    if "abn" in methods:
+        p = _resolve_ckpt(abn_ckpt)
+        if p is not None:
+            runners["abn"] = ABNRunner(p, device=device)
+        else:
+            print(f"[WARN] Missing ABN checkpoint for dataset {dataset_tag}; skipping abn.", flush=True)
 
     if "afr" in methods:
         p1 = _resolve_ckpt(afr_stage1_ckpt)

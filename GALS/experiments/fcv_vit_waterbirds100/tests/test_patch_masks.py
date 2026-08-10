@@ -17,7 +17,11 @@ EXPERIMENT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(EXPERIMENT_ROOT / "src"))
 
 from fcv.config import load_and_validate_config  # noqa: E402
-from fcv.patch_masks import PatchMaskError, prepare_patch_masks  # noqa: E402
+from fcv.patch_masks import (  # noqa: E402
+    PatchMaskError,
+    prepare_patch_masks,
+    teacher_map_to_patch_scores,
+)
 
 
 class PatchMasksTest(unittest.TestCase):
@@ -125,6 +129,26 @@ class PatchMasksTest(unittest.TestCase):
         self.assertEqual(payload["spatial_transform"], "eval_resize_shorter_side_then_center_crop")
         self.assertEqual(result["summary"]["preflight_overlay_count"], 2)
         self.assertTrue(Path(result["summary"]["preflight_overlay_index"]).is_file())
+
+    def test_binary_white_fixture_is_rejected_as_non_voc(self) -> None:
+        """Prevent 0/255 fixtures from hiding the real producer encoding."""
+
+        binary_fixture = self.map_root / "incorrect_binary_0_255.png"
+        white_foreground = np.zeros((256, 320, 3), dtype=np.uint8)
+        white_foreground[64:176, 96:208] = (255, 255, 255)
+        Image.fromarray(white_foreground).save(binary_fixture)
+
+        with self.assertRaisesRegex(PatchMaskError, "non-VOC colors"):
+            teacher_map_to_patch_scores(
+                binary_fixture,
+                image_size=224,
+                patch_size=16,
+                normalize_to_unit_interval=True,
+                interpolation="nearest",
+                eval_resize_size=256,
+                map_format="voc_colormap_class_ids",
+                foreground_class_ids=[1],
+            )
 
     def test_failed_eligibility_still_persists_diagnostics(self) -> None:
         empty = np.zeros((256, 320, 3), dtype=np.uint8)
