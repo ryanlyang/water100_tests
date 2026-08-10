@@ -97,13 +97,18 @@ def run_trial(trial_id, args, rng, sampler_name):
     rgw.lr2_mult = lr2_mult
     rgw.SEED = args.seed
 
-    run_args = SimpleNamespace(data_path=args.data_path, teacher_map_path=args.teacher_map_path)
+    run_args = SimpleNamespace(
+        data_path=args.data_path,
+        teacher_map_path=args.teacher_map_path,
+        alignment_loss=args.alignment_loss,
+    )
     best_balanced_val, test_acc, per_group, worst_group, ckpt = rgw.run_single(
         run_args, attn_epoch, kl_lambda, kl_incr
     )
 
     row = {
         "trial": trial_id,
+        "alignment_loss": args.alignment_loss,
         "attention_epoch": attn_epoch,
         "kl_lambda": kl_lambda,
         "kl_incr": kl_incr,
@@ -140,6 +145,12 @@ def main():
     parser.add_argument("--lr2-mult-max", type=float, default=3.0)
     parser.add_argument("--sampler", choices=["tpe", "random"], default="tpe")
     parser.add_argument(
+        "--alignment-loss",
+        choices=rgw.ALIGNMENT_LOSSES,
+        default="forward_kl",
+        help="Spatial teacher/student alignment objective.",
+    )
+    parser.add_argument(
         "--resume-csv",
         default=None,
         help="Optional existing sweep CSV to resume from. Prior completed trials are loaded into Optuna.",
@@ -148,6 +159,7 @@ def main():
 
     header = [
         "trial",
+        "alignment_loss",
         "attention_epoch",
         "kl_lambda",
         "kl_incr",
@@ -167,6 +179,16 @@ def main():
     existing_rows = []
     if args.resume_csv:
         existing_rows = load_existing_rows(args.resume_csv)
+        mismatched_losses = {
+            str(row.get("alignment_loss", "forward_kl"))
+            for row in existing_rows
+            if str(row.get("alignment_loss", "forward_kl")) != args.alignment_loss
+        }
+        if mismatched_losses:
+            raise ValueError(
+                f"Resume CSV contains alignment losses {sorted(mismatched_losses)}, "
+                f"but this run requested {args.alignment_loss!r}."
+            )
         if existing_rows:
             print(f"[RESUME] Loaded {len(existing_rows)} existing rows from: {args.resume_csv}")
         else:
@@ -222,7 +244,10 @@ def main():
             print(f"[SWEEP] Trial {trial.number} done. best_balanced_val_acc={row['best_balanced_val_acc']:.4f}")
             return row["best_balanced_val_acc"]
 
-        study = optuna.create_study(direction="maximize")
+        study = optuna.create_study(
+            direction="maximize",
+            sampler=optuna.samplers.TPESampler(seed=args.seed),
+        )
 
         if existing_rows:
             distributions = {

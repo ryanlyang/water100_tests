@@ -16,6 +16,8 @@ from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision import datasets, transforms, models
 import pandas as pd
 
+from alignment_losses import ALIGNMENT_LOSSES, normalize_alignment_loss_name, spatial_alignment_loss
+
 
 
 
@@ -256,15 +258,10 @@ class WaterbirdsMetadataDataset(Dataset):
 
 
 
-def compute_loss(outputs, labels, cams, gt_masks, kl_lambda, only_ce):
+def compute_loss(outputs, labels, cams, gt_masks, kl_lambda, only_ce,
+                 alignment_loss="forward_kl"):
     ce_loss = nn.functional.cross_entropy(outputs, labels)
-    B, Hf, Wf = cams.shape
-    cam_flat = cams.view(B, -1)
-    gt_flat = gt_masks.view(B, -1)
-    log_p = nn.functional.log_softmax(cam_flat, dim=1)
-    gt_prob = gt_flat / (gt_flat.sum(dim=1, keepdim=True) + 1e-8)
-    kl_div = nn.KLDivLoss(reduction='batchmean')
-    attn_loss = kl_div(log_p, gt_prob)
+    attn_loss = spatial_alignment_loss(cams, gt_masks, alignment_loss)
     if only_ce:
         return ce_loss, attn_loss
     else:
@@ -292,7 +289,8 @@ def _get_param_groups(model, base_lr, classifier_lr):
 
 def train_model(model, dataloaders, dataset_sizes,
                 attention_epoch, kl_lambda_start, num_epochs,
-                base_lr, classifier_lr, lr2_mult, kl_incr, use_attention, num_classes):
+                base_lr, classifier_lr, lr2_mult, kl_incr, use_attention, num_classes,
+                alignment_loss="forward_kl"):
     best_wts = copy.deepcopy(model.state_dict())
     best_optim = -100.0
     best_epoch = -1
@@ -371,7 +369,10 @@ def train_model(model, dataloaders, dataset_sizes,
                             gt_masks, size=sal_norm.shape[1:], mode='nearest'
                         ).squeeze(1)
 
-                        loss_tuple = compute_loss(outputs, labels, sal_norm, gt_small, kl_lambda_real, False)
+                        loss_tuple = compute_loss(
+                            outputs, labels, sal_norm, gt_small, kl_lambda_real, False,
+                            alignment_loss=alignment_loss,
+                        )
 
                         loss = loss_tuple[0]
                         attn_loss = loss_tuple[1]
@@ -470,6 +471,9 @@ def run_single(args, attn_epoch, kl_value, kl_increment=None):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     use_attention = attn_epoch < num_epochs and kl_value > 0
+    alignment_loss = normalize_alignment_loss_name(
+        getattr(args, "alignment_loss", "forward_kl")
+    )
 
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
@@ -575,7 +579,11 @@ def run_single(args, attn_epoch, kl_value, kl_increment=None):
     if save_checkpoints:
         os.makedirs(checkpoint_dir, exist_ok=True)
 
-    print(f"\n=== RUN: kl_lambda={kl_value}, attention_epoch={attn_epoch} ===", flush=True)
+    print(
+        f"\n=== RUN: alignment_loss={alignment_loss} alignment_weight={kl_value}, "
+        f"attention_epoch={attn_epoch} ===",
+        flush=True,
+    )
     if kl_increment is None:
         kl_increment = kl_value / 10
     best_model, best_score, best_epoch = train_model(
@@ -583,7 +591,8 @@ def run_single(args, attn_epoch, kl_value, kl_increment=None):
         attn_epoch, kl_value, num_epochs,
         base_lr=base_lr, classifier_lr=classifier_lr, lr2_mult=lr2_mult,
         kl_incr=kl_increment, use_attention=use_attention,
-        num_classes=num_classes
+        num_classes=num_classes,
+        alignment_loss=alignment_loss,
     )
     print(f"\n[VAL] Best Balanced Acc: {best_score:.4f} at epoch {best_epoch}")
 
@@ -605,7 +614,7 @@ def run_single(args, attn_epoch, kl_value, kl_increment=None):
         save_path = "NONE"
         print("[RUN DONE] Checkpoint saving disabled via SAVE_CHECKPOINTS=0", flush=True)
 
-    print(f"[RUN DONE] kl={kl_value} attn={attn_epoch} lr2_mult={lr2_mult} kl_incr={kl_increment} | best_balanced_val_acc={best_score:.4f} "
+    print(f"[RUN DONE] alignment_loss={alignment_loss} alignment_weight={kl_value} attn={attn_epoch} lr2_mult={lr2_mult} kl_incr={kl_increment} | best_balanced_val_acc={best_score:.4f} "
           f"| test_acc={test_acc:.2f}% | saved: {save_path}", flush=True)
     return best_score, test_acc, per_group, worst_group, save_path
 
@@ -620,6 +629,12 @@ def main():
     parser.add_argument('--attention_epoch', type=int, default=num_epochs,
                         help='Epoch at which to restart training (>= num_epochs disables attention)')
     parser.add_argument('--kl_lambda', type=float, default=0.0, help='Weight for attention KL loss')
+    parser.add_argument(
+        '--alignment-loss',
+        choices=ALIGNMENT_LOSSES,
+        default='forward_kl',
+        help='Spatial teacher/student alignment objective (default: forward_kl)',
+    )
     parser.add_argument('--kl_increment', type=float, default=None, help='Increment added to KL each epoch after attention_epoch')
     parser.add_argument('--base_lr', type=float, default=base_lr, help='Base learning rate')
     parser.add_argument('--classifier_lr', type=float, default=classifier_lr, help='Classifier learning rate')
