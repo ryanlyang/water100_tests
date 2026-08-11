@@ -53,6 +53,7 @@ def load_resume_rows(csv_path, max_trials):
                 continue
             row = {
                 "trial": tid,
+                "alignment_loss": raw.get("alignment_loss", "forward_kl"),
                 "teacher_map_path": raw.get("teacher_map_path"),
                 "model_name": raw.get("model_name", "resnet50"),
                 "clip_model": raw.get("clip_model", "RN50"),
@@ -192,6 +193,7 @@ def _run_single_with_params(args, seed, teacher_map_path, attn_epoch, kl_lambda,
         label_col=args.label_col,
         path_col=args.path_col,
         classes=args.class_list,
+        alignment_loss=args.alignment_loss,
         model_name=args.model_name,
         clip_model=args.clip_model,
         tune_mode=args.tune_mode,
@@ -231,6 +233,7 @@ def run_trial(trial_id, args, rng, sampler_name):
 
     row = {
         "trial": trial_id,
+        "alignment_loss": args.alignment_loss,
         "teacher_map_path": args.teacher_map_path,
         "model_name": args.model_name,
         "clip_model": args.clip_model,
@@ -287,6 +290,12 @@ def main():
     p.add_argument("--lr2-mult-min", type=float, default=1e-1)
     p.add_argument("--lr2-mult-max", type=float, default=3.0)
     p.add_argument("--sampler", choices=["tpe", "random"], default="tpe")
+    p.add_argument(
+        "--alignment-loss",
+        choices=rgm.base.ALIGNMENT_LOSSES,
+        default="forward_kl",
+        help="Spatial teacher/student alignment objective.",
+    )
     p.add_argument("--model-name", choices=["resnet50", "clip_rn50"], default="resnet50")
     p.add_argument("--clip-model", default="RN50", help="Used when --model-name clip_rn50.")
     p.add_argument("--tune-mode", choices=["full", "layer4_head", "linear_probe"], default="full")
@@ -331,6 +340,7 @@ def main():
 
     header = [
         "trial",
+        "alignment_loss",
         "teacher_map_path",
         "model_name",
         "clip_model",
@@ -366,6 +376,16 @@ def main():
 
     if args.resume_csv:
         resume_rows, completed_trial_ids = load_resume_rows(args.resume_csv, args.n_trials)
+        mismatched_losses = {
+            str(row.get("alignment_loss", "forward_kl"))
+            for row in resume_rows
+            if str(row.get("alignment_loss", "forward_kl")) != args.alignment_loss
+        }
+        if mismatched_losses:
+            raise ValueError(
+                f"Resume CSV contains alignment losses {sorted(mismatched_losses)}, "
+                f"but this run requested {args.alignment_loss!r}."
+            )
         sweep_rows.extend(resume_rows)
         for row in resume_rows:
             score = row.get("best_balanced_val_acc")
@@ -440,6 +460,7 @@ def main():
         post_header = [
             "phase",
             "seed",
+            "alignment_loss",
             "teacher_map_path",
             "model_name",
             "clip_model",
@@ -495,6 +516,7 @@ def main():
                 out_row = {
                     "phase": phase,
                     "seed": s,
+                    "alignment_loss": args.alignment_loss,
                     "teacher_map_path": teacher_map_root,
                     "model_name": args.model_name,
                     "clip_model": args.clip_model,

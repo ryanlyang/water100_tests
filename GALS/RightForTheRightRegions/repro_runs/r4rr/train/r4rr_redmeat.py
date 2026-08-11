@@ -334,6 +334,9 @@ def run_single(args, attn_epoch, kl_value, kl_increment=None):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     use_attention = attn_epoch < num_epochs and kl_value > 0
+    alignment_loss = base.normalize_alignment_loss_name(
+        getattr(args, "alignment_loss", "forward_kl")
+    )
 
     model_name = str(getattr(args, "model_name", "resnet50"))
     pretrained = bool(getattr(args, "pretrained", True))
@@ -464,7 +467,11 @@ def run_single(args, attn_epoch, kl_value, kl_increment=None):
     if save_checkpoints:
         os.makedirs(checkpoint_dir, exist_ok=True)
 
-    print(f"\n=== RUN: kl_lambda={kl_value}, attention_epoch={attn_epoch} ===", flush=True)
+    print(
+        f"\n=== RUN: alignment_loss={alignment_loss} alignment_weight={kl_value}, "
+        f"attention_epoch={attn_epoch} ===",
+        flush=True,
+    )
     if kl_increment is None:
         kl_increment = kl_value / 10.0
 
@@ -481,6 +488,7 @@ def run_single(args, attn_epoch, kl_value, kl_increment=None):
         kl_incr=kl_increment,
         use_attention=use_attention,
         num_classes=num_classes,
+        alignment_loss=alignment_loss,
     )
     print(f"\n[VAL] Best Balanced Acc: {best_score:.4f} at epoch {best_epoch}")
 
@@ -500,7 +508,8 @@ def run_single(args, attn_epoch, kl_value, kl_increment=None):
         print("[RUN DONE] Checkpoint saving disabled via SAVE_CHECKPOINTS=0", flush=True)
 
     print(
-        f"[RUN DONE] tune_mode={tune_mode} kl={kl_value} attn={attn_epoch} lr2_mult={lr2_mult} kl_incr={kl_increment} "
+        f"[RUN DONE] tune_mode={tune_mode} alignment_loss={alignment_loss} "
+        f"alignment_weight={kl_value} attn={attn_epoch} lr2_mult={lr2_mult} kl_incr={kl_increment} "
         f"| best_balanced_val_acc={best_score:.4f} | test_acc={test_acc:.2f}% | saved: {save_path}",
         flush=True,
     )
@@ -517,6 +526,12 @@ def main():
     p.add_argument("--seed", type=int, default=SEED)
     p.add_argument("--attention-epoch", type=int, default=num_epochs)
     p.add_argument("--kl-lambda", type=float, default=0.0)
+    p.add_argument(
+        "--alignment-loss",
+        choices=base.ALIGNMENT_LOSSES,
+        default="forward_kl",
+        help="Spatial teacher/student alignment objective.",
+    )
     p.add_argument("--kl-increment", type=float, default=None)
     p.add_argument("--base_lr", type=float, default=base_lr)
     p.add_argument("--classifier_lr", type=float, default=classifier_lr)
