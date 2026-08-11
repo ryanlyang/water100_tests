@@ -23,12 +23,19 @@ Game CSVs are validated and reused when a job is resubmitted.
 - Target: ground-truth class by default.
 - Ground-truth region: foreground pixels from the corresponding clean
   torchvision MNIST image.
+- Primary score: resolution-matched Pointing Game. The clean `28x28` digit
+  mask is adaptively max-pooled to the native `8x8` `conv2` Grad-CAM grid. A
+  native CAM peak is a hit when its cell overlaps any clean digit pixel.
+- Diagnostic score: conventional pixel-level Pointing Game after bilinearly
+  upsampling the native Grad-CAM to `28x28`.
 - Decoy exclusion: exported PNG filenames preserve the original MNIST index,
   so masks are recovered from the clean source rather than thresholded from
   the decoy image. The synthetic 5x5 corner patch is never part of the mask.
 - Empty explanation: an all-zero Grad-CAM is a miss.
-- Reporting: overall, macro-digit, worst-digit, and per-digit Pointing Game
-  accuracy, followed by population mean and standard deviation across seeds.
+- Reporting: native-grid overall, macro-digit, worst-digit, per-digit, and
+  random-hit rates, followed by population mean and standard deviation across
+  seeds. Pixel-level scores are retained under `pg_*` fields as diagnostics;
+  primary resolution-matched fields use the `pg_native_*` prefix.
 
 CLIP-ZS and CLIP-LR are excluded from this seven-job workflow. They do not
 require stochastic CNN retraining and need a separate explanation protocol
@@ -73,7 +80,9 @@ pg5_decoy_r4rr
 ## Resume
 
 Run the same submission command again. The output root is stable, so each job
-skips valid seed manifests and valid Pointing Game summaries. A seed whose
+skips valid seed manifests and valid current-protocol Pointing Game summaries.
+Summaries from the older pixel-only protocol are automatically reevaluated
+from their existing checkpoints; no retraining is needed. A seed whose
 training was interrupted before checkpoint creation is retrained from the
 start; DecoyMNIST training is only 19 LeNet epochs.
 

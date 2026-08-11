@@ -14,16 +14,32 @@ from typing import Dict, Iterable, List, Sequence
 
 
 DIGITS = tuple(range(10))
+MASK_PROTOCOL_VERSION = 2
+PRIMARY_PG_PROTOCOL = "native_resolution_overlap"
 RATE_KEYS = (
+    "pg_native_acc",
+    "pg_native_macro_class_acc",
+    "pg_native_worst_class_acc",
+    "pg_native_random_acc",
     "pg_acc",
     "pg_macro_class_acc",
     "pg_worst_class_acc",
+    "pg_pixel_random_acc",
     "classification_acc",
-) + tuple(f"digit_{digit}_pg_acc" for digit in DIGITS)
+) + tuple(
+    f"digit_{digit}_{protocol}_acc"
+    for digit in DIGITS
+    for protocol in ("pg_native", "pg")
+)
 REQUIRED_FINITE_RATE_KEYS = (
+    "pg_native_acc",
+    "pg_native_macro_class_acc",
+    "pg_native_worst_class_acc",
+    "pg_native_random_acc",
     "pg_acc",
     "pg_macro_class_acc",
     "pg_worst_class_acc",
+    "pg_pixel_random_acc",
     "classification_acc",
 )
 
@@ -80,7 +96,19 @@ def read_seed(method_dir: Path, seed: int) -> Dict[str, object]:
     row: Dict[str, object] = dict(source_rows[0])
     if str(row.get("dataset")) != "decoymnist" or int(row.get("seed", -1)) != seed:
         raise RuntimeError(f"Unexpected dataset/seed in {path}")
-    if int(row.get("errors", 1)) != 0 or int(row.get("pg_total", 0)) <= 0:
+    if (
+        int(row.get("mask_protocol_version", -1)) != MASK_PROTOCOL_VERSION
+        or row.get("primary_pg_protocol") != PRIMARY_PG_PROTOCOL
+    ):
+        raise RuntimeError(f"Outdated Pointing Game protocol in {path}")
+    if (
+        int(row.get("errors", 1)) != 0
+        or int(row.get("pg_native_total", 0)) <= 0
+        or int(row.get("pg_total", 0)) <= 0
+        or int(row.get("pg_native_total", 0)) != int(row.get("pg_total", -1))
+        or (int(row.get("native_map_height", 0)), int(row.get("native_map_width", 0)))
+        != (8, 8)
+    ):
         raise RuntimeError(f"Invalid evaluation counts in {path}")
     for key in RATE_KEYS:
         value = float(row[key])
@@ -88,7 +116,17 @@ def read_seed(method_dir: Path, seed: int) -> Dict[str, object]:
             raise RuntimeError(f"Non-finite {key} in {path}: {value}")
         row[key] = value
         row[f"{key}_pct"] = 100.0 * value
-    for key in ("pg_hits", "pg_total", "zero_saliency_maps", "errors"):
+    for key in (
+        "mask_protocol_version",
+        "native_map_height",
+        "native_map_width",
+        "pg_native_hits",
+        "pg_native_total",
+        "pg_hits",
+        "pg_total",
+        "zero_saliency_maps",
+        "errors",
+    ):
         row[key] = int(row[key])
     row["source_csv"] = str(path)
     return row
@@ -99,6 +137,21 @@ def summarize_method(method_dir: Path, seeds: Sequence[int]) -> Dict[str, object
     method = str(rows[0]["method"])
     if any(str(row["method"]) != method for row in rows):
         raise RuntimeError(f"Mixed methods under {method_dir}")
+    fixed_fields = (
+        "split",
+        "target_mode",
+        "mask_source",
+        "mask_threshold",
+        "max_samples",
+        "sample_seed",
+        "mask_protocol_version",
+        "primary_pg_protocol",
+        "native_map_height",
+        "native_map_width",
+    )
+    for field in fixed_fields:
+        if any(row[field] != rows[0][field] for row in rows[1:]):
+            raise RuntimeError(f"Mixed {field} values under {method_dir}")
 
     summary: Dict[str, object] = {
         "dataset": "decoymnist",
@@ -106,6 +159,13 @@ def summarize_method(method_dir: Path, seeds: Sequence[int]) -> Dict[str, object
         "split": rows[0]["split"],
         "target_mode": rows[0]["target_mode"],
         "mask_source": rows[0]["mask_source"],
+        "mask_threshold": rows[0]["mask_threshold"],
+        "max_samples": rows[0]["max_samples"],
+        "sample_seed": rows[0]["sample_seed"],
+        "mask_protocol_version": MASK_PROTOCOL_VERSION,
+        "primary_pg_protocol": PRIMARY_PG_PROTOCOL,
+        "native_map_height": rows[0]["native_map_height"],
+        "native_map_width": rows[0]["native_map_width"],
         "n_seeds": len(rows),
         "seeds": ",".join(str(seed) for seed in seeds),
     }
@@ -123,11 +183,20 @@ def summarize_method(method_dir: Path, seeds: Sequence[int]) -> Dict[str, object
     atomic_json(method_dir / "pointing_game_5seed_summary.json", summary)
     print(
         f"[SUMMARY] decoymnist {method}: "
-        f"overall={summary['pg_acc_mean_pct']:.2f} +/- {summary['pg_acc_std_pct']:.2f}, "
-        f"macro={summary['pg_macro_class_acc_mean_pct']:.2f} +/- "
-        f"{summary['pg_macro_class_acc_std_pct']:.2f}, "
-        f"worst={summary['pg_worst_class_acc_mean_pct']:.2f} +/- "
-        f"{summary['pg_worst_class_acc_std_pct']:.2f}",
+        f"native={summary['pg_native_acc_mean_pct']:.2f} +/- "
+        f"{summary['pg_native_acc_std_pct']:.2f}, "
+        f"native_macro={summary['pg_native_macro_class_acc_mean_pct']:.2f} +/- "
+        f"{summary['pg_native_macro_class_acc_std_pct']:.2f}, "
+        f"native_worst={summary['pg_native_worst_class_acc_mean_pct']:.2f} +/- "
+        f"{summary['pg_native_worst_class_acc_std_pct']:.2f}, "
+        f"native_random={summary['pg_native_random_acc_mean_pct']:.2f} +/- "
+        f"{summary['pg_native_random_acc_std_pct']:.2f}, "
+        f"pixel_diagnostic={summary['pg_acc_mean_pct']:.2f} +/- "
+        f"{summary['pg_acc_std_pct']:.2f}, "
+        f"classification={summary['classification_acc_mean_pct']:.2f} +/- "
+        f"{summary['classification_acc_std_pct']:.2f}, "
+        f"zero_maps={summary['zero_saliency_maps_mean']:.1f} +/- "
+        f"{summary['zero_saliency_maps_std']:.1f}",
         flush=True,
     )
     return summary

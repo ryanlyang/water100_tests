@@ -113,9 +113,10 @@ PY
 pointing_summary_is_valid() {
   local summary="$1"
   local seed="$2"
-  python - "$summary" "$METHOD" "$seed" "$SPLIT" <<'PY'
-import csv, os, sys
-path, method, seed, split = sys.argv[1:]
+  python - "$summary" "$METHOD" "$seed" "$SPLIT" "$TARGET_MODE" \
+    "$MASK_THRESHOLD" "$MAX_SAMPLES" "$SAMPLE_SEED" <<'PY'
+import csv, math, sys
+path, method, seed, split, target_mode, mask_threshold, max_samples, sample_seed = sys.argv[1:]
 try:
     rows = list(csv.DictReader(open(path, newline="", encoding="utf-8")))
     row = rows[0] if len(rows) == 1 else None
@@ -125,6 +126,17 @@ try:
         and row.get("method") == method
         and int(row.get("seed", -1)) == int(seed)
         and row.get("split") == split
+        and row.get("target_mode") == target_mode
+        and int(row.get("mask_threshold", -1)) == int(mask_threshold)
+        and int(row.get("max_samples", -1)) == int(max_samples)
+        and int(row.get("sample_seed", -1)) == int(sample_seed)
+        and int(row.get("mask_protocol_version", -1)) == 2
+        and row.get("primary_pg_protocol") == "native_resolution_overlap"
+        and int(row.get("native_map_height", 0)) == 8
+        and int(row.get("native_map_width", 0)) == 8
+        and int(row.get("pg_native_total", 0)) > 0
+        and int(row.get("pg_native_total", 0)) == int(row.get("pg_total", -1))
+        and math.isfinite(float(row.get("pg_native_acc", "nan")))
         and int(row.get("pg_total", 0)) > 0
         and int(row.get("errors", 1)) == 0
     )

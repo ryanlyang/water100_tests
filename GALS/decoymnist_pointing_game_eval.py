@@ -8,8 +8,10 @@ as its nonzero foreground.  The synthetic corner patch is therefore never
 part of the evaluation mask.
 
 All supported LeNet-style methods are explained with standard Grad-CAM at
-``conv2`` for a common, architecture-matched comparison.  An all-zero map is
-counted as a miss.
+``conv2`` for a common, architecture-matched comparison.  The primary metric
+is resolution-matched: the clean foreground mask is max-pooled to the native
+8x8 Grad-CAM grid before testing the peak location.  The original pixel-level
+score is retained as a diagnostic.  An all-zero map is counted as a miss.
 """
 
 from __future__ import annotations
@@ -34,6 +36,8 @@ from torchvision.transforms import Compose, Grayscale, Lambda, ToTensor
 
 SUPPORTED_METHODS = ("vanilla", "elrep", "upweight", "abn", "gals", "afr", "r4rr")
 FILENAME_RE = re.compile(r"^(?P<index>\d+)_y(?P<label>\d+)$")
+MASK_PROTOCOL_VERSION = 2
+PRIMARY_PG_PROTOCOL = "native_resolution_overlap"
 
 
 class LeNet(nn.Module):
@@ -200,7 +204,27 @@ class CleanDigitMaskDataset(Dataset):
 @dataclass
 class GradCAMBatch:
     saliency: torch.Tensor
+    native_saliency: torch.Tensor
     logits: torch.Tensor
+
+
+def normalize_saliency_batch(saliency: torch.Tensor) -> torch.Tensor:
+    flat = saliency.flatten(1)
+    minima = flat.min(dim=1, keepdim=True).values
+    maxima = flat.max(dim=1, keepdim=True).values
+    ranges = maxima - minima
+    return torch.where(
+        ranges > 1e-12,
+        (flat - minima) / ranges.clamp_min(1e-12),
+        torch.zeros_like(flat),
+    ).view_as(saliency)
+
+
+def resolution_match_masks(masks: torch.Tensor, output_size: Tuple[int, int]) -> torch.Tensor:
+    if masks.ndim != 3:
+        raise ValueError(f"Expected BxHxW masks, found shape {tuple(masks.shape)}")
+    pooled = F.adaptive_max_pool2d(masks.unsqueeze(1).float(), output_size=output_size)
+    return pooled.squeeze(1).gt(0).to(torch.uint8)
 
 
 def gradcam_batch(
@@ -221,20 +245,18 @@ def gradcam_batch(
         scores = logits.gather(1, targets.view(-1, 1)).sum()
         gradients = torch.autograd.grad(scores, features, retain_graph=False, create_graph=False)[0]
         weights = gradients.mean(dim=(2, 3), keepdim=True)
-        saliency = torch.relu((weights * features).sum(dim=1, keepdim=True))
-        saliency = F.interpolate(
-            saliency, size=images.shape[-2:], mode="bilinear", align_corners=False
+        native_saliency = torch.relu((weights * features).sum(dim=1))
+        pixel_saliency = F.interpolate(
+            native_saliency.unsqueeze(1),
+            size=images.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
         ).squeeze(1)
-        flat = saliency.flatten(1)
-        minima = flat.min(dim=1, keepdim=True).values
-        maxima = flat.max(dim=1, keepdim=True).values
-        ranges = maxima - minima
-        normalized = torch.where(
-            ranges > 1e-12,
-            (flat - minima) / ranges.clamp_min(1e-12),
-            torch.zeros_like(flat),
-        ).view_as(saliency)
-        return GradCAMBatch(saliency=normalized.detach(), logits=logits.detach())
+        return GradCAMBatch(
+            saliency=normalize_saliency_batch(pixel_saliency).detach(),
+            native_saliency=normalize_saliency_batch(native_saliency).detach(),
+            logits=logits.detach(),
+        )
     finally:
         handle.remove()
 
@@ -327,9 +349,14 @@ def main() -> None:
     model.to(device).eval()
 
     class_hits = np.zeros(10, dtype=np.int64)
+    native_class_hits = np.zeros(10, dtype=np.int64)
     class_totals = np.zeros(10, dtype=np.int64)
     class_correct = np.zeros(10, dtype=np.int64)
+    digit_mask_pixels_total = 0
+    native_mask_cells_total = 0
     zero_maps = 0
+    native_map_size: Optional[Tuple[int, int]] = None
+    pixel_map_size: Optional[Tuple[int, int]] = None
     rows: List[Dict[str, object]] = []
 
     print(
@@ -348,27 +375,66 @@ def main() -> None:
         targets = labels_device if args.target_mode == "label" else predictions
         explained = gradcam_batch(model, images, targets)
 
+        batch_native_size = tuple(explained.native_saliency.shape[-2:])
+        batch_pixel_size = tuple(explained.saliency.shape[-2:])
+        if native_map_size is None:
+            native_map_size = batch_native_size
+            pixel_map_size = batch_pixel_size
+        elif native_map_size != batch_native_size or pixel_map_size != batch_pixel_size:
+            raise RuntimeError(
+                "Grad-CAM spatial resolution changed between batches: "
+                f"native={native_map_size}->{batch_native_size}, "
+                f"pixel={pixel_map_size}->{batch_pixel_size}"
+            )
+
         saliency_batch = explained.saliency.cpu().numpy()
+        native_saliency_batch = explained.native_saliency.cpu().numpy()
         masks_batch = masks.numpy()
+        native_masks_batch = resolution_match_masks(
+            masks,
+            output_size=batch_native_size,
+        ).numpy()
         labels_batch = labels.numpy()
         predictions_batch = predictions.cpu().numpy()
         targets_batch = targets.cpu().numpy()
         source_batch = source_indices.numpy()
 
-        for saliency, mask, label, prediction, target, path, source_index in zip(
+        batch_items = zip(
             saliency_batch,
+            native_saliency_batch,
             masks_batch,
+            native_masks_batch,
             labels_batch,
             predictions_batch,
             targets_batch,
             paths,
             source_batch,
-        ):
+        )
+        for (
+            saliency,
+            native_saliency,
+            mask,
+            native_mask,
+            label,
+            prediction,
+            target,
+            path,
+            source_index,
+        ) in batch_items:
             hit, peak_row, peak_col, is_zero = pointing_result(saliency, mask)
+            native_hit, native_peak_row, native_peak_col, native_is_zero = pointing_result(
+                native_saliency,
+                native_mask,
+            )
+            if is_zero != native_is_zero:
+                raise RuntimeError("Pixel and native Grad-CAM zero-map status disagree.")
             label_int = int(label)
             class_totals[label_int] += 1
             class_hits[label_int] += int(hit)
+            native_class_hits[label_int] += int(native_hit)
             class_correct[label_int] += int(int(prediction) == label_int)
+            digit_mask_pixels_total += int(np.count_nonzero(mask))
+            native_mask_cells_total += int(np.count_nonzero(native_mask))
             zero_maps += int(is_zero)
             rows.append(
                 {
@@ -387,15 +453,28 @@ def main() -> None:
                     "peak_row": peak_row,
                     "peak_col": peak_col,
                     "saliency_max": float(np.max(saliency)),
+                    "pg_native_hit": int(native_hit),
+                    "native_peak_row": native_peak_row,
+                    "native_peak_col": native_peak_col,
+                    "native_saliency_max": float(np.max(native_saliency)),
                     "zero_saliency": int(is_zero),
                     "digit_mask_pixels": int(np.count_nonzero(mask)),
+                    "native_digit_mask_cells": int(np.count_nonzero(native_mask)),
                 }
             )
 
     if not rows:
         raise RuntimeError("No DecoyMNIST samples were evaluated.")
+    if native_map_size is None or pixel_map_size is None:
+        raise RuntimeError("Grad-CAM map dimensions were not recorded.")
     class_pg = np.divide(
         class_hits,
+        class_totals,
+        out=np.full(10, np.nan, dtype=np.float64),
+        where=class_totals > 0,
+    )
+    native_class_pg = np.divide(
+        native_class_hits,
         class_totals,
         out=np.full(10, np.nan, dtype=np.float64),
         where=class_totals > 0,
@@ -408,27 +487,55 @@ def main() -> None:
     )
     finite_pg = np.flatnonzero(np.isfinite(class_pg))
     worst_digit = int(finite_pg[np.argmin(class_pg[finite_pg])])
+    finite_native_pg = np.flatnonzero(np.isfinite(native_class_pg))
+    native_worst_digit = int(
+        finite_native_pg[np.argmin(native_class_pg[finite_native_pg])]
+    )
     total = int(class_totals.sum())
+    native_height, native_width = native_map_size
+    pixel_height, pixel_width = pixel_map_size
     summary: Dict[str, object] = {
         "dataset": "decoymnist",
         "method": args.method,
         "seed": int(args.seed),
         "split": args.split,
         "target_mode": args.target_mode,
+        "mask_protocol_version": MASK_PROTOCOL_VERSION,
+        "primary_pg_protocol": PRIMARY_PG_PROTOCOL,
+        "native_map_height": int(native_height),
+        "native_map_width": int(native_width),
+        "pg_native_hits": int(native_class_hits.sum()),
+        "pg_native_total": total,
+        "pg_native_acc": float(native_class_hits.sum() / max(total, 1)),
+        "pg_native_macro_class_acc": float(np.nanmean(native_class_pg)),
+        "pg_native_worst_class_acc": float(native_class_pg[native_worst_digit]),
+        "pg_native_worst_class": native_worst_digit,
+        "pg_native_random_acc": float(
+            native_mask_cells_total / max(total * native_height * native_width, 1)
+        ),
         "pg_hits": int(class_hits.sum()),
         "pg_total": total,
         "pg_acc": float(class_hits.sum() / max(total, 1)),
         "pg_macro_class_acc": float(np.nanmean(class_pg)),
         "pg_worst_class_acc": float(class_pg[worst_digit]),
         "pg_worst_class": worst_digit,
+        "pg_pixel_random_acc": float(
+            digit_mask_pixels_total / max(total * pixel_height * pixel_width, 1)
+        ),
         "classification_acc": float(class_correct.sum() / max(total, 1)),
         "zero_saliency_maps": int(zero_maps),
         "mask_source": "clean_torchvision_mnist_foreground",
         "mask_threshold": int(args.mask_threshold),
+        "max_samples": int(args.max_samples),
+        "sample_seed": int(args.sample_seed),
+        "val_frac": float(args.val_frac),
+        "split_seed": int(args.split_seed),
         "checkpoint": str(checkpoint),
         "errors": 0,
     }
     for digit in range(10):
+        summary[f"digit_{digit}_pg_native_hits"] = int(native_class_hits[digit])
+        summary[f"digit_{digit}_pg_native_acc"] = float(native_class_pg[digit])
         summary[f"digit_{digit}_hits"] = int(class_hits[digit])
         summary[f"digit_{digit}_total"] = int(class_totals[digit])
         summary[f"digit_{digit}_pg_acc"] = float(class_pg[digit])
@@ -442,10 +549,12 @@ def main() -> None:
 
     print(
         f"[RESULT] method={args.method} seed={args.seed} "
-        f"pg={100.0 * float(summary['pg_acc']):.2f}% "
-        f"macro={100.0 * float(summary['pg_macro_class_acc']):.2f}% "
-        f"worst_digit={worst_digit} "
-        f"worst={100.0 * float(summary['pg_worst_class_acc']):.2f}% "
+        f"native_pg={100.0 * float(summary['pg_native_acc']):.2f}% "
+        f"native_macro={100.0 * float(summary['pg_native_macro_class_acc']):.2f}% "
+        f"native_worst_digit={native_worst_digit} "
+        f"native_worst={100.0 * float(summary['pg_native_worst_class_acc']):.2f}% "
+        f"native_random={100.0 * float(summary['pg_native_random_acc']):.2f}% "
+        f"pixel_pg={100.0 * float(summary['pg_acc']):.2f}% "
         f"zero_maps={zero_maps}/{total}"
     )
     print(f"[DONE] {output_dir / 'pointing_game_summary.csv'}")
