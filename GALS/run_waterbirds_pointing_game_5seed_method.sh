@@ -61,6 +61,15 @@ else
   fi
 fi
 
+if [[ "$METHOD" == "abn" ]]; then
+  ABN_WEIGHT="$GALS_ROOT/weights/resnet50_abn_imagenet.pth.tar"
+  if [[ ! -f "$ABN_WEIGHT" ]]; then
+    echo "[ERROR] Missing pretrained ABN checkpoint: $ABN_WEIGHT" >&2
+    echo "Download the ABN authors' model_best.pth.tar and save it at that path." >&2
+    exit 2
+  fi
+fi
+
 mkdir -p "$LOG_DIR" "$METHOD_DIR"
 # Some Conda packages install activation hooks that read optional variables.
 # Temporarily disable nounset so those hooks can initialize the environment.
