@@ -23,7 +23,11 @@ if [[ ! -f "$REQ_FILE" ]]; then
   exit 2
 fi
 
+# Conda activation hooks may inspect optional MKL variables before defining
+# them. Keep nounset disabled only while Conda initializes or activates.
+set +u
 source "$CONDA_SH"
+set -u
 
 env_exists() {
   conda env list | awk -v name="$ENV_NAME" '$1 == name { found=1 } END { exit !found }'
@@ -47,7 +51,9 @@ else
   echo "[STEP 1/5] Environment already exists; repairing it in place."
 fi
 
+set +u
 conda activate "$ENV_NAME"
+set -u
 export PYTHONNOUSERSITE=1
 
 echo "[STEP 2/5] Installing the established CUDA-enabled PyTorch stack."

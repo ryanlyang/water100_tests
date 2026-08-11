@@ -44,8 +44,12 @@ TRAIN_DIR="$GALS_ROOT/RightForTheRightRegions/repro_runs/other_models/decoymnist
 R4RR_TRAIN="$GALS_ROOT/RightForTheRightRegions/repro_runs/r4rr/train/r4rr_decoy_fixed.py"
 
 mkdir -p "$LOG_DIR" "$METHOD_DIR"
+# Some Conda packages install activation hooks that read optional variables.
+# Temporarily disable nounset so those hooks can initialize the environment.
+set +u
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate "${ENV_NAME:-gals_a100}"
+set -u
 
 export PYTHONNOUSERSITE=1
 export PYTHONPATH="$PROJECT_ROOT:$GALS_ROOT:${PYTHONPATH:-}"

@@ -62,8 +62,12 @@ else
 fi
 
 mkdir -p "$LOG_DIR" "$METHOD_DIR"
+# Some Conda packages install activation hooks that read optional variables.
+# Temporarily disable nounset so those hooks can initialize the environment.
+set +u
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate "${ENV_NAME:-gals_a100}"
+set -u
 
 export TF_CPP_MIN_LOG_LEVEL=3
 export TF_ENABLE_ONEDNN_OPTS=0
