@@ -57,8 +57,12 @@ EMPTY_CACHE_EVERY="${EMPTY_CACHE_EVERY:-25}"
 
 mkdir -p "$LOG_DIR"
 
+# Conda activation hooks may read optional variables such as
+# MKL_INTERFACE_LAYER, which is incompatible with nounset during activation.
+set +u
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate "$CONDA_ENV"
+set -u
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
