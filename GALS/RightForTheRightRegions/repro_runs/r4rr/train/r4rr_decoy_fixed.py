@@ -11,6 +11,7 @@ Key behavior:
 - Adds guided training stage:
   - epoch < attention_epoch: CE only
   - epoch >= attention_epoch: CE + kl_lambda * KL(Mask || GradCAM)
+- Optionally saves every epoch for checkpoint-selection diagnostics.
 """
 
 from __future__ import print_function
@@ -306,6 +307,29 @@ def train_one_seed(args, seed, full_train_guided, full_train_plain, true_test, d
                 best_epoch = epoch
                 best_weights = deepcopy(model.state_dict())
 
+        if args.epoch_checkpoint_dir:
+            epoch_dir = Path(args.epoch_checkpoint_dir).expanduser().resolve()
+            epoch_dir.mkdir(parents=True, exist_ok=True)
+            epoch_path = epoch_dir / f"decoy_r4rr_seed{seed}_epoch{epoch:02d}.pth"
+            temporary = epoch_path.with_name(f".{epoch_path.name}.tmp")
+            torch.save(
+                {
+                    "model_state_dict": deepcopy(model.state_dict()),
+                    "seed": int(seed),
+                    "epoch": int(epoch),
+                    "train_loss": float(train_loss),
+                    "train_acc": float(train_acc),
+                    "val_loss": float(val_loss),
+                    "val_acc": float(val_acc),
+                    "attention_active": bool(attention_active),
+                    "effective_kl_lambda": float(kl_lambda_real if attention_active else 0.0),
+                    "args": vars(args),
+                },
+                temporary,
+            )
+            os.replace(str(temporary), str(epoch_path))
+            print(f"[EPOCH CKPT] seed={seed} epoch={epoch} path={epoch_path}")
+
         if args.print_every > 0 and (epoch % args.print_every == 0 or epoch == args.epochs):
             print(
                 f"seed={seed} epoch={epoch}/{args.epochs} "
@@ -363,6 +387,12 @@ def main():
         type=str,
         default="",
         help="Optional directory for one best-validation checkpoint per seed.",
+    )
+    parser.add_argument(
+        "--epoch-checkpoint-dir",
+        type=str,
+        default="",
+        help="Optional directory for checkpoints from every completed epoch.",
     )
     parser.add_argument("--no-cuda", action="store_true", default=False)
     args = parser.parse_args()

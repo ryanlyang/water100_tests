@@ -124,3 +124,26 @@ The combined table is written to:
 ```text
 pointing_game_all_methods_5seed_summary.csv
 ```
+
+## R4RR epochwise diagnostic
+
+The separate epochwise runner trains one R4RR seed, preserves checkpoints for
+epochs 1--19, and evaluates every checkpoint with the same test-set protocol.
+Test Pointing Game measurements are diagnostic only and never select a
+checkpoint. The resulting table marks the epoch selected by validation
+classification accuracy.
+
+```bash
+sbatch run_decoymnist_r4rr_epochwise_pointing.sh
+```
+
+The default stable output directory is:
+
+```text
+/home/ryreu/guided_cnn/logsMNIST/decoy_r4rr_epochwise_pointing_seed0
+```
+
+The main result is `epochwise_pointing_game.csv`. Resubmission reuses a valid
+training trajectory and completed epoch evaluations. Set `SEED`, `RUN_DIR`, or
+`FORCE_RETRAIN=1` through `sbatch --export` when a different diagnostic is
+required.
