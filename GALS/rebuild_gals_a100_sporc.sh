@@ -60,15 +60,17 @@ echo "[STEP 2/5] Installing the established CUDA-enabled PyTorch stack."
 # conda install may internally deactivate/reactivate the current environment,
 # which runs the same MKL hooks as an explicit conda activate.
 set +u
-conda install -y \
+conda install -y --force-reinstall \
   pytorch==1.12.1 \
   torchvision==0.13.1 \
   cudatoolkit=11.3 \
   -c pytorch -c nvidia -c conda-forge
 
 echo "[STEP 3/5] Installing compiled dataset utilities."
-conda install -y -c conda-forge pycocotools
 set -u
+# A separate conda-forge solve for pycocotools can silently replace the
+# pinned PyTorch/CUDA stack. The PyPI wheel does not participate in that solve.
+python -m pip install --no-cache-dir pycocotools==2.0.7
 
 echo "[STEP 4/5] Installing GALS, R4RR, ElRep, sweep, and AFR dependencies."
 python -m pip install --no-cache-dir -r "$REQ_FILE"
