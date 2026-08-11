@@ -1,0 +1,30 @@
+# Runtime dependencies for the legacy SPORC x86/A100 environment.
+#
+# Install PyTorch, torchvision, CUDA, pycocotools, torchray, and OpenCV using
+# rebuild_gals_a100_sporc.sh. They are intentionally omitted here so pip
+# cannot replace the CUDA-enabled PyTorch build.
+
+requests==2.26.0
+ftfy==6.0.3
+matplotlib==3.4.3
+numpy==1.21.2
+omegaconf==2.1.1
+pandas==1.3.3
+Pillow==8.3.2
+PyYAML==6.0.1
+regex==2021.8.28
+scikit-learn==0.24.2
+scipy==1.7.1
+scikit-image==0.18.3
+tqdm==4.62.2
+
+# Sweep and logging support. These releases retain Python 3.8 support.
+optuna==3.6.1
+wandb==0.16.6
+
+# AFR stage-1/stage-2 dependencies.
+timm==0.9.16
+einops==0.7.0
+wilds==2.0.0
+transformers==4.38.2
+pytorch-transformers==1.2.0
