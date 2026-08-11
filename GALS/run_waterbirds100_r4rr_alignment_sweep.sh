@@ -15,7 +15,7 @@
 #SBATCH --error=/home/ryreu/guided_cnn/logsWaterbird/%x_%j.err
 #SBATCH --signal=TERM@120
 
-set -Eeuo pipefail
+set -Eeo pipefail
 
 ALIGNMENT_LOSS=${ALIGNMENT_LOSS:?Set ALIGNMENT_LOSS before submission}
 case "$ALIGNMENT_LOSS" in
@@ -23,8 +23,11 @@ case "$ALIGNMENT_LOSS" in
   *) echo "[ERROR] Unsupported ALIGNMENT_LOSS=$ALIGNMENT_LOSS" >&2; exit 2 ;;
 esac
 
+# Some cluster Conda activation hooks read optional variables before defining
+# them, so enable nounset only after activation has completed.
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate "${ENV_NAME:-gals_a100}"
+set -u
 
 export TF_CPP_MIN_LOG_LEVEL=3
 export TF_ENABLE_ONEDNN_OPTS=0
