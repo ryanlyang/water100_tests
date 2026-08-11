@@ -3,6 +3,9 @@ __pycache__/
 .ipynb_checkpoints
 
 data/
+# AFR's source package is named data; it is code, not downloaded dataset data.
+!RightForTheRightRegions/repro_runs/third_party/afr/data/
+!RightForTheRightRegions/repro_runs/third_party/afr/data/*.py
 wandb/
 
 CLIP/clip/bpe_simple_vocab_16e6.txt.gz

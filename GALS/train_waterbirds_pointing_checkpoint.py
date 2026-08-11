@@ -306,12 +306,20 @@ def _resolve_afr_root(explicit: str) -> Path:
     candidates = [
         Path(explicit).expanduser() if explicit else None,
         PROJECT_ROOT / "afr",
+        PROJECT_ROOT / "old_stuff" / "afr",
         GALS_ROOT / "RightForTheRightRegions" / "repro_runs" / "third_party" / "afr",
     ]
     for candidate in candidates:
-        if candidate is not None and (candidate / "train_supervised.py").is_file():
+        if (
+            candidate is not None
+            and (candidate / "train_supervised.py").is_file()
+            and (candidate / "data" / "datasets.py").is_file()
+        ):
             return candidate.resolve()
-    raise FileNotFoundError("Could not locate the AFR repository. Pass --afr-root.")
+    raise FileNotFoundError(
+        "Could not locate a complete AFR repository containing "
+        "train_supervised.py and data/datasets.py. Pass --afr-root."
+    )
 
 
 def _train_afr(args: argparse.Namespace, hparams: Dict[str, Any]) -> Dict[str, Any]:

@@ -415,6 +415,14 @@ def run_one_trial(
 
         rc = proc.wait()
         if rc != 0:
+            try:
+                with open(trial_log, "r", encoding="utf-8", errors="replace") as failed_log:
+                    tail = failed_log.readlines()[-80:]
+                print(f"[ERROR] Last {len(tail)} lines from {trial_log}:", flush=True)
+                for failed_line in tail:
+                    print(failed_line, end="" if failed_line.endswith("\n") else "\n", flush=True)
+            except OSError as exc:
+                print(f"[WARN] Could not read failed trial log {trial_log}: {exc}", flush=True)
             raise RuntimeError(f"Trial {trial_id} failed with exit code {rc}. See {trial_log}")
 
     # Compute per-group and worst-group on test if available
