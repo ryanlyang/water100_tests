@@ -40,6 +40,17 @@ cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
 bash submit_waterbirds_rise_pointing_game_5seed_all.sh
 ```
 
+If some five-seed training jobs are still running, queue only the complete
+dataset-method pairs with:
+
+```bash
+ALLOW_PARTIAL=1 bash submit_waterbirds_rise_pointing_game_5seed_all.sh
+```
+
+Run the same command again after the remaining training jobs finish. It skips
+incomplete pairs, active RISE jobs, and already-completed RISE evaluations, so
+rerunning it does not duplicate work.
+
 This submits 14 three-day A100 jobs, one for each dataset-method pair. Each job
 evaluates all five seeds sequentially and resumes from valid per-seed result
 CSVs. Results are written to:
