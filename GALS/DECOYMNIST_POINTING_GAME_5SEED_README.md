@@ -42,13 +42,14 @@ Defaults in the worker are:
 repo:        /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
 PNG data:    /home/ryreu/guided_cnn/MNIST_AGAIN/MakeMNIST/data/DecoyMNIST_png
 clean MNIST: /home/ryreu/guided_cnn/MNIST_AGAIN/MakeMNIST/data
-GALS maps:   <PNG data>/clip_vit_attention
+GALS maps:   <PNG data>/clip_rn50_attention_gradcam
 R4RR maps:   /home/ryreu/guided_cnn/MNIST_AGAIN/DecoyGen/LearningToLook/code/WeCLIPPlus/results_decoy_mnist/val/prediction_cmap
 outputs:     /home/ryreu/guided_cnn/logsMNIST/pointing_game_5seed_gradcam
 ```
 
 All paths can be overridden through the corresponding environment variables:
 `PNG_ROOT`, `MNIST_ROOT`, `GALS_MAPS`, `R4RR_MAPS`, `RUN_ROOT`, and `LOG_DIR`.
+Only GALS requires `GALS_MAPS`; Vanilla trains directly from the DecoyMNIST PNGs.
 
 ## Submit
 

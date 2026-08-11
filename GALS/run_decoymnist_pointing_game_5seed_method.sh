@@ -28,7 +28,7 @@ METHOD_DIR="$RUN_ROOT/$METHOD"
 
 PNG_ROOT="${PNG_ROOT:-/home/ryreu/guided_cnn/MNIST_AGAIN/MakeMNIST/data/DecoyMNIST_png}"
 MNIST_ROOT="${MNIST_ROOT:-/home/ryreu/guided_cnn/MNIST_AGAIN/MakeMNIST/data}"
-GALS_MAPS="${GALS_MAPS:-$PNG_ROOT/clip_vit_attention}"
+GALS_MAPS="${GALS_MAPS:-$PNG_ROOT/clip_rn50_attention_gradcam}"
 R4RR_MAPS="${R4RR_MAPS:-/home/ryreu/guided_cnn/MNIST_AGAIN/DecoyGen/LearningToLook/code/WeCLIPPlus/results_decoy_mnist/val/prediction_cmap}"
 
 SEEDS_CSV="${SEEDS_CSV:-0,1,2,3,4}"
@@ -76,8 +76,15 @@ which python
   echo "[ERROR] Missing raw torchvision MNIST under $MNIST_ROOT/MNIST" >&2
   exit 2
 }
-if [[ "$METHOD" == "vanilla" || "$METHOD" == "gals" ]]; then
-  [[ -d "$GALS_MAPS" ]] || { echo "[ERROR] Missing GALS maps: $GALS_MAPS" >&2; exit 2; }
+if [[ "$METHOD" == "gals" ]]; then
+  [[ -d "$GALS_MAPS/train" ]] || { echo "[ERROR] Missing GALS train maps: $GALS_MAPS/train" >&2; exit 2; }
+  train_image_count="$(find "$PNG_ROOT/train" -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) | wc -l)"
+  train_map_count="$(find "$GALS_MAPS/train" -type f -name '*.pth' | wc -l)"
+  echo "[RUN] gals_maps=$GALS_MAPS train_maps=$train_map_count train_images=$train_image_count"
+  if [[ "$train_map_count" -ne "$train_image_count" ]]; then
+    echo "[ERROR] GALS map count does not match DecoyMNIST training image count." >&2
+    exit 2
+  fi
 fi
 if [[ "$METHOD" == "r4rr" ]]; then
   [[ -d "$R4RR_MAPS" ]] || { echo "[ERROR] Missing R4RR maps: $R4RR_MAPS" >&2; exit 2; }
@@ -208,7 +215,6 @@ for seed_raw in "${SEEDS[@]}"; do
       vanilla)
         python -u "$TRAIN_DIR/gals_decoy_fixed.py" \
           --png-root "$PNG_ROOT" \
-          --mask-root "$GALS_MAPS" \
           --loss-mode rrr \
           --grad-weight 0.0 \
           --grad-criterion L1 \

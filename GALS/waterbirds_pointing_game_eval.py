@@ -6,7 +6,7 @@ Supported methods:
 - r4rr (guided)
 - vanilla
 - elrep
-- gals/upweight (binary single-logit GALS models from this repo)
+- gals/upweight (one- or two-output GALS ResNet models from this repo)
 - abn
 - afr (AFR stage-1 model, optional stage-2 last-layer override)
 
@@ -333,12 +333,23 @@ class GALSRunner(MethodRunnerBase):
 
     def __init__(self, checkpoint: Path, device: torch.device):
         self.device = device
+        ckpt = torch_load_compat(checkpoint, device)
+        state = extract_state_dict(ckpt)
+        fc_weight = next(
+            (value for key, value in state.items() if key.endswith("fc.weight")),
+            None,
+        )
+        if fc_weight is None or fc_weight.ndim != 2:
+            raise RuntimeError(f"Could not infer classifier shape from GALS checkpoint: {checkpoint}")
+        self.num_outputs = int(fc_weight.shape[0])
+        if self.num_outputs not in (1, 2):
+            raise RuntimeError(
+                f"Expected one or two Waterbirds outputs, found {self.num_outputs}: {checkpoint}"
+            )
         # GALS checkpoints contain direct ResNet keys (conv1.*, layer1.*, fc.*),
         # so load into the direct model rather than a wrapper with a "net." prefix.
         self.model = gals_resnet50(pretrained=False, return_fmaps=True).to(device)
-        self.model.fc = nn.Linear(self.model.fc.in_features, 1).to(device)
-        ckpt = torch_load_compat(checkpoint, device)
-        state = extract_state_dict(ckpt)
+        self.model.fc = nn.Linear(self.model.fc.in_features, self.num_outputs).to(device)
         state = align_state_dict_keys(state, self.model)
         self.model.load_state_dict(state, strict=True)
         self.model.eval()
@@ -348,12 +359,16 @@ class GALSRunner(MethodRunnerBase):
         self, image_tensor: torch.Tensor, label: int, target_mode: str
     ) -> Tuple[int, int, np.ndarray]:
         logits, feats = self.model(image_tensor)
-        prob_1 = torch.sigmoid(logits[:, 0])
-        pred = int((prob_1 >= 0.5).long().item())
-        target = int(label if target_mode == "label" else pred)
-
-        w_pos = self.model.fc.weight[0]  # type: ignore[attr-defined]
-        class_weight = w_pos if target == 1 else (-w_pos)
+        if self.num_outputs == 1:
+            prob_1 = torch.sigmoid(logits[:, 0])
+            pred = int((prob_1 >= 0.5).long().item())
+            target = int(label if target_mode == "label" else pred)
+            w_pos = self.model.fc.weight[0]  # type: ignore[attr-defined]
+            class_weight = w_pos if target == 1 else (-w_pos)
+        else:
+            pred = int(logits.argmax(dim=1).item())
+            target = int(label if target_mode == "label" else pred)
+            class_weight = self.model.fc.weight[target]  # type: ignore[attr-defined]
         cam = compute_cam(feats[0], class_weight)
         return pred, target, cam
 

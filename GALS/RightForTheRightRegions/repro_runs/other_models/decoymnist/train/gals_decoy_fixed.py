@@ -158,7 +158,7 @@ def evaluate_with_class_stats(
     return avg_loss, acc, class_acc, worst_class_acc
 
 
-def train_one_seed(args, seed: int, full_train: GuidedImageFolder, test_dataset: ImageFolder, device, loader_kwargs):
+def train_one_seed(args, seed: int, full_train: utils.Dataset, test_dataset: ImageFolder, device, loader_kwargs):
     set_seed(seed)
 
     # Keep split fixed across seeds (matches cdepstyle behavior used in Decoy runners).
@@ -188,6 +188,9 @@ def train_one_seed(args, seed: int, full_train: GuidedImageFolder, test_dataset:
     best_val_loss = float("inf")
     best_weights = None
     best_epoch = -1
+    compute_rrr = args.loss_mode in ("rrr", "both") and args.grad_weight != 0.0
+    compute_cam = args.loss_mode in ("gradcam", "both") and args.cam_weight != 0.0
+    needs_masks = compute_rrr or compute_cam
 
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -200,24 +203,34 @@ def train_one_seed(args, seed: int, full_train: GuidedImageFolder, test_dataset:
                 dynamic_ncols=True,
             )
 
-        for data, target, gt_mask in epoch_iter:
+        for batch in epoch_iter:
+            if needs_masks:
+                if len(batch) != 3:
+                    raise RuntimeError("Guided training requires image, label, and attention mask batches.")
+                data, target, gt_mask = batch
+            else:
+                data, target = batch[:2]
+                gt_mask = None
             data = data.to(device)
             target = target.to(device)
-            gt_mask = gt_mask.to(device)
-            gt_mask = F.interpolate(gt_mask, size=data.shape[-2:], mode="nearest")
+            if gt_mask is not None:
+                gt_mask = gt_mask.to(device)
+                gt_mask = F.interpolate(gt_mask, size=data.shape[-2:], mode="nearest")
 
-            data.requires_grad_(True)
+            data.requires_grad_(compute_rrr)
             optimizer.zero_grad()
 
             logits, fmaps = model(data, return_fmaps=True)
             cls_loss = F.cross_entropy(logits, target)
             loss = cls_loss
 
-            if args.loss_mode in ("rrr", "both"):
+            if compute_rrr:
+                assert gt_mask is not None
                 dy_dx = torch.autograd.grad(cls_loss, data, create_graph=True, retain_graph=True)[0]
                 rrr_loss = grad_criterion(dy_dx, dy_dx * gt_mask)
                 loss = loss + args.grad_weight * rrr_loss
-            if args.loss_mode in ("gradcam", "both"):
+            if compute_cam:
+                assert gt_mask is not None
                 one_hot = torch.zeros_like(logits)
                 one_hot.scatter_(1, target.unsqueeze(1), 1.0)
                 grads = torch.autograd.grad(
@@ -326,12 +339,21 @@ def main() -> None:
     loader_kwargs = {"num_workers": args.num_workers, "pin_memory": use_cuda}
 
     transform = Compose([Grayscale(num_output_channels=1), ToTensor(), Lambda(lambda x: x * 2.0 - 1.0)])
-    full_train = GuidedImageFolder(
-        png_root=args.png_root,
-        mask_root=args.mask_root,
-        split="train",
-        image_transform=transform,
+    needs_masks = (
+        (args.loss_mode in ("rrr", "both") and args.grad_weight != 0.0)
+        or (args.loss_mode in ("gradcam", "both") and args.cam_weight != 0.0)
     )
+    if needs_masks:
+        if not Path(args.mask_root).is_dir():
+            raise FileNotFoundError(f"Attention mask root not found: {args.mask_root}")
+        full_train = GuidedImageFolder(
+            png_root=args.png_root,
+            mask_root=args.mask_root,
+            split="train",
+            image_transform=transform,
+        )
+    else:
+        full_train = ImageFolder(os.path.join(args.png_root, "train"), transform=transform)
     test_dataset = ImageFolder(os.path.join(args.png_root, "test"), transform=transform)
 
     print("Running DecoyMNIST fixed GALS-RRR")
