@@ -4,6 +4,7 @@ import logging
 import os
 import random
 import sys
+import tempfile
 sys.path.append(".")
 import numpy as np
 import torch
@@ -334,6 +335,70 @@ def train(cfg):
     )
     logging.info('\nOptimizer: \n%s' % optimizer)
 
+    start_iter = 0
+    resume_state_path = os.environ.get("WECLIP_RESUME_STATE", "").strip()
+    if resume_state_path and os.path.isfile(resume_state_path):
+        resume_payload = torch.load(resume_state_path, map_location="cpu")
+        if not isinstance(resume_payload, dict) or "model_state_dict" not in resume_payload:
+            raise RuntimeError(f"Invalid WeCLIP resume state: {resume_state_path}")
+        model.load_state_dict(resume_payload["model_state_dict"], strict=True)
+        optimizer.load_state_dict(resume_payload["optimizer_state_dict"])
+        start_iter = int(resume_payload["completed_iterations"])
+        optimizer.global_step = int(resume_payload.get("optimizer_global_step", start_iter))
+        model.iter_num = int(resume_payload.get("model_iter_num", start_iter))
+        if "torch_rng_state" in resume_payload:
+            torch.set_rng_state(resume_payload["torch_rng_state"])
+        if torch.cuda.is_available() and "cuda_rng_state_all" in resume_payload:
+            torch.cuda.set_rng_state_all(resume_payload["cuda_rng_state_all"])
+        if "numpy_rng_state" in resume_payload:
+            np.random.set_state(resume_payload["numpy_rng_state"])
+        if "python_rng_state" in resume_payload:
+            random.setstate(resume_payload["python_rng_state"])
+        logging.info(
+            "Resuming WeCLIP training at iteration %d/%d from %s. "
+            "The shuffled data iterator restarts at the continuation boundary.",
+            start_iter,
+            cfg.train.max_iters,
+            resume_state_path,
+        )
+        if start_iter > int(cfg.train.max_iters):
+            raise RuntimeError(
+                f"Resume iteration {start_iter} exceeds configured max_iters={cfg.train.max_iters}"
+            )
+
+    state_path = os.environ.get("WECLIP_STATE_PATH", "").strip()
+    checkpoint_interval = int(os.environ.get("WECLIP_CHECKPOINT_INTERVAL", "5000"))
+    keep_iteration_checkpoints = os.environ.get("WECLIP_KEEP_ITER_CHECKPOINTS", "1") == "1"
+
+    def save_training_state(completed_iterations, final_model_path=None):
+        if not state_path:
+            return
+        state_dir = os.path.dirname(os.path.abspath(state_path))
+        os.makedirs(state_dir, exist_ok=True)
+        payload = {
+            "schema_version": 1,
+            "completed_iterations": int(completed_iterations),
+            "max_iterations": int(cfg.train.max_iters),
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "optimizer_global_step": int(optimizer.global_step),
+            "model_iter_num": int(model.iter_num),
+            "torch_rng_state": torch.get_rng_state(),
+            "cuda_rng_state_all": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
+            "numpy_rng_state": np.random.get_state(),
+            "python_rng_state": random.getstate(),
+            "final_model_path": final_model_path,
+        }
+        fd, temporary_path = tempfile.mkstemp(prefix=".weclip_state_", suffix=".pt", dir=state_dir)
+        os.close(fd)
+        try:
+            torch.save(payload, temporary_path)
+            os.replace(temporary_path, state_path)
+        finally:
+            if os.path.exists(temporary_path):
+                os.unlink(temporary_path)
+        logging.info("Saved resumable training state: %s", state_path)
+
     train_loader_iter = iter(train_loader)
 
     avg_meter = AverageMeter()
@@ -341,7 +406,18 @@ def train(cfg):
     criterion_dice = DiceLoss().cuda()
 
 
-    for n_iter in range(cfg.train.max_iters):
+    if start_iter == int(cfg.train.max_iters):
+        completed_model = os.path.join(
+            cfg.work_dir.ckpt_dir,
+            f"wetr_iter_{int(cfg.train.max_iters)}.pth",
+        )
+        if not os.path.isfile(completed_model):
+            torch.save(model.state_dict(), completed_model)
+        logging.info("Training state is already complete: %s", completed_model)
+        writer.close()
+        return completed_model
+
+    for n_iter in range(start_iter, cfg.train.max_iters):
 
         try:
             img_name, inputs, cls_labels, img_box = next(train_loader_iter)
@@ -417,15 +493,30 @@ def train(cfg):
         #     logging.info(seg_score)
 
         #Validation Commented Out
-        if (n_iter + 1) % 10000 == 0 or (n_iter+1 == cfg.train.max_iters):
+        completed_iterations = n_iter + 1
+        is_final = completed_iterations == cfg.train.max_iters
+        if completed_iterations % checkpoint_interval == 0 or is_final:
+            final_model_path = None
+            if keep_iteration_checkpoints or is_final:
+                ckpt_path = os.path.join(
+                    cfg.work_dir.ckpt_dir,
+                    f"wetr_iter_{completed_iterations}.pth"
+                )
+                torch.save(model.state_dict(), ckpt_path)
+                if is_final:
+                    last_path = ckpt_path
+                    final_model_path = ckpt_path
+            save_training_state(completed_iterations, final_model_path=final_model_path)
+
+        # Backward-compatible periodic model snapshots when resumable state is disabled.
+        elif not state_path and completed_iterations % 10000 == 0:
             ckpt_path = os.path.join(
                 cfg.work_dir.ckpt_dir,
-                f"wetr_iter_{n_iter+1}.pth"
+                f"wetr_iter_{completed_iterations}.pth"
             )
-            if n_iter + 1 == cfg.train.max_iters:
-                last_path = ckpt_path
             torch.save(model.state_dict(), ckpt_path)
 
+    writer.close()
     return last_path
 
 
@@ -440,7 +531,8 @@ def main(config):
 
     # Use CLIP_TEXT_VERSION env var to create unique subdirectory if available
     clip_text_version = os.environ.get('CLIP_TEXT_VERSION', 'default')
-    timestamp_with_version = f"{timestamp}_{clip_text_version}"
+    stable_run_id = os.environ.get("WECLIP_STABLE_RUN_ID", "").strip()
+    timestamp_with_version = stable_run_id or f"{timestamp}_{clip_text_version}"
 
     cfg.work_dir.ckpt_dir = os.path.join(cfg.work_dir.dir, cfg.work_dir.ckpt_dir, timestamp_with_version)
     cfg.work_dir.pred_dir = os.path.join(cfg.work_dir.dir, cfg.work_dir.pred_dir)

@@ -177,3 +177,43 @@ it does not contain the held-out Original validation split or official test
 variants. The builder is resumable, refuses unexpected or mismatched links,
 and writes a manifest, input contract, and full audit under
 `voc_workspace/metadata/`.
+
+The workspace also contains one lightweight VOC XML file per training image.
+Each XML records only that image's coarse ImageNet-9 class and a full-image
+extent. These are image-level labels, not localization annotations; they ensure
+that WeCLIP+ generates CAMs only for the image's actual foreground class rather
+than all nine classes.
+
+Train the WeCLIP+ teacher after workspace preparation. Create its isolated
+Python 3.8/PyTorch 2.0 environment once on the submit node:
+
+```bash
+bash ImageNet9_Runs/setup_imagenet9_r4rr_weclip_env.sh
+```
+
+The training runner uses `r4rr-weclip` by default. This is intentionally
+separate from `gals_a100`: the vendored DINOv2 code requires PyTorch 2
+scaled-dot-product attention, while the legacy experiment environment uses
+PyTorch 1.12.
+
+Then run a two-iteration GPU smoke test:
+
+```bash
+sbatch --partition=debug --time=04:00:00 --export=ALL,MODE=smoke \
+  ImageNet9_Runs/run_imagenet9_r4rr_weclip_train.sbatch
+```
+
+Then launch the full training run:
+
+```bash
+sbatch ImageNet9_Runs/run_imagenet9_r4rr_weclip_train.sbatch
+```
+
+At batch size four, the dataset-scaled schedule is 29,000 iterations. Training
+uses OpenCLIP's ViT-B/16 implementation with OpenAI weights and DINOv2
+ViT-L/14-register refinement, matching the primary R4RR teacher family. The
+full run writes one replaceable continuation state every 5,000 iterations and
+a final model checkpoint under
+`r4rr_teacher/weclipplus_clip_dino_v1/training/full/`. Re-submit the same full
+command after interruption to continue from the saved model, optimizer,
+iteration, and RNG state. Smoke and full states are isolated from one another.
