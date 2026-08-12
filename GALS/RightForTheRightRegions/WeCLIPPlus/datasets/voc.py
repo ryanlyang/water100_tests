@@ -18,7 +18,31 @@ import cv2
 
 def load_img_name_list(img_name_list_path):
     img_name_list = np.loadtxt(img_name_list_path, dtype=str)
-    return img_name_list
+    return np.atleast_1d(img_name_list)
+
+
+def _load_class_names(name_list_dir):
+    """Load an explicit class order when supplied, preserving legacy fallback."""
+    class_order_path = os.path.join(name_list_dir, 'classes.txt')
+    if os.path.isfile(class_order_path):
+        with open(class_order_path, 'r') as f:
+            classes = [line.strip() for line in f if line.strip()]
+        if not classes:
+            raise RuntimeError(f'Empty class order file: {class_order_path}')
+        if len(classes) != len(set(classes)):
+            raise RuntimeError(f'Duplicate classes in: {class_order_path}')
+        missing = [
+            cls for cls in classes
+            if not os.path.isfile(os.path.join(name_list_dir, f'{cls}_train.txt'))
+        ]
+        if missing:
+            raise RuntimeError(
+                f'classes.txt entries are missing *_train.txt files: {missing}'
+            )
+        return classes
+
+    class_files = [f for f in os.listdir(name_list_dir) if f.endswith('_train.txt')]
+    return sorted({fname[:-len('_train.txt')] for fname in class_files})
 
 def load_cls_label_list(name_list_dir):
     """
@@ -28,9 +52,8 @@ def load_cls_label_list(name_list_dir):
       - <class>_train.txt           (basename 1/-1)
       - <class>_val.txt             (basename 1/-1)
     """
-    # 1) discover your classes by looking at *_train.txt filenames
-    class_files = [f for f in os.listdir(name_list_dir) if f.endswith('_train.txt')]
-    classes = sorted({fname.split('_')[0] for fname in class_files})
+    # 1) Prefer an explicit order; otherwise retain filename-based discovery.
+    classes = _load_class_names(name_list_dir)
 
     # 2) initialize the label map
     label_map = {}
@@ -416,5 +439,3 @@ class VOC12SegDataset(VOC12Dataset):
         
         dummy_label = np.zeros((self.crop_size, self.crop_size), dtype=np.int16)
         return img_name, image, torch.from_numpy(dummy_label), cls_label
-
-       

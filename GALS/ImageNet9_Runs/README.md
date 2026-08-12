@@ -156,3 +156,24 @@ Every map is named by the unique ImageNet source `sample_id`, retains the GALS
 `unnormalized_attentions` tensor schema, and is recorded in a per-shard CSV.
 Existing valid files are reused after interruption. Only Original training
 images are selected; validation and all official variants are excluded.
+
+## R4RR VOC compatibility workspace
+
+R4RR map generation uses the existing WeCLIP+ CLIP+DINO+CRF pipeline. Prepare
+its VOC-compatible view without copying ImageNet images:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+sbatch ImageNet9_Runs/run_prepare_imagenet9_r4rr_voc_workspace.sbatch
+```
+
+The workspace places absolute symlinks named `<sample_id>.jpg` under
+`VOCdevkit/VOC2012/JPEGImages/`, pointing to the shared ImageNet `.JPEG`
+sources. `classes.txt` fixes the foreground order to `dog`, `bird`, `vehicle`,
+`reptile`, `carnivore`, `insect`, `instrument`, `primate`, and `fish`. Each
+class has complete VOC `+1/-1` files for both `train` and `val`. In this teacher
+workspace, `val` intentionally aliases Original training IDs for map inference;
+it does not contain the held-out Original validation split or official test
+variants. The builder is resumable, refuses unexpected or mismatched links,
+and writes a manifest, input contract, and full audit under
+`voc_workspace/metadata/`.

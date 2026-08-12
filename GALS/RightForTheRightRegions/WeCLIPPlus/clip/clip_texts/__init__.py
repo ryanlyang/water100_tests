@@ -5,5 +5,5 @@ DATASET_MODULES = {
     "redmeat": "clip.clip_texts.clip_text_redmeat",
     "decoymnist": "clip.clip_texts.clip_text_mnist",
     "coloredmnist": "clip.clip_texts.clip_text_mnist",
+    "imagenet9": "clip.clip_texts.clip_text_imagenet9",
 }
-

@@ -20,6 +20,10 @@ _DATASET_ALIASES: Dict[str, str] = {
     "colored_mnist": "coloredmnist",
     "mnist": "decoymnist",
     "digit": "decoymnist",
+    "imagenet9": "imagenet9",
+    "imagenet_9": "imagenet9",
+    "in9": "imagenet9",
+    "backgrounds_challenge": "imagenet9",
 }
 
 _CLASS_TO_DATASET: Dict[str, str] = {
@@ -131,4 +135,3 @@ BACKGROUND_CATEGORY_COCO = [
     "river", "sea", "railway", "railroad", "helmet", "cloud", "house", "mountain",
     "ocean", "road", "rock", "street", "valley", "bridge",
 ]
-
