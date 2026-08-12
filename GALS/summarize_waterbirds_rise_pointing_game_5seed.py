@@ -37,8 +37,15 @@ def write_csv(path: Path, rows: Sequence[Dict[str, object]]) -> None:
         raise RuntimeError(f"Refusing to write empty CSV: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    fieldnames: List[str] = []
+    seen = set()
+    for row in rows:
+        for field in row:
+            if field not in seen:
+                seen.add(field)
+                fieldnames.append(field)
     with temporary.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
     os.replace(temporary, path)
