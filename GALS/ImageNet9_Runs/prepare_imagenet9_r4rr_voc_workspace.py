@@ -210,6 +210,23 @@ def ensure_image_links(samples: Sequence[ManifestSample], image_dir: Path) -> Di
     return {"created": created, "reused": reused}
 
 
+def indent_xml(element: ET.Element, level: int = 0, space: str = "  ") -> None:
+    """Indent an ElementTree in place, including on Python 3.8."""
+    children = list(element)
+    if not children:
+        return
+
+    child_indent = "\n" + space * (level + 1)
+    closing_indent = "\n" + space * level
+    if not element.text or not element.text.strip():
+        element.text = child_indent
+
+    for index, child in enumerate(children):
+        indent_xml(child, level + 1, space)
+        if not child.tail or not child.tail.strip():
+            child.tail = child_indent if index < len(children) - 1 else closing_indent
+
+
 def annotation_xml(sample: ManifestSample) -> str:
     annotation = ET.Element("annotation")
     ET.SubElement(annotation, "filename").text = f"{sample.sample_id}.jpg"
@@ -225,7 +242,7 @@ def annotation_xml(sample: ManifestSample) -> str:
     ET.SubElement(box, "ymin").text = "0"
     ET.SubElement(box, "xmax").text = str(sample.width)
     ET.SubElement(box, "ymax").text = str(sample.height)
-    ET.indent(annotation, space="  ")
+    indent_xml(annotation)
     return ET.tostring(annotation, encoding="unicode") + "\n"
 
 
