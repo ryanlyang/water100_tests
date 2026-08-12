@@ -67,3 +67,57 @@ counts, checks train/validation disjointness, and decodes representative images
 through the deterministic evaluation transform. The manifest loader preserves
 `sample_id` in every item; this is the key used to join training images to
 teacher maps in the next stage.
+
+## Non-teacher baseline sweeps
+
+The shared baseline trainer currently covers ERM, Upweight, ABN, and ElRep.
+Every method uses an ImageNet-pretrained ResNet-50, batch size 96, 20 epochs,
+SGD, weight decay `1e-5`, and checkpoint selection by Original validation macro
+class accuracy. The official Backgrounds Challenge variants are not loaded by
+the trainer or Optuna driver.
+
+Search spaces preserve the corresponding main-experiment contracts:
+
+| Method | Tuned parameters |
+|---|---|
+| ERM | `base_lr`, `classifier_lr` in `[1e-5, 5e-2]` log; `momentum` in `[0.85, 0.95]` |
+| Upweight | `base_lr`, `classifier_lr` in `[5e-5, 1e-1]` log |
+| ABN | Upweight LR space plus `abn_cls_weight` in `[1e-2, 1e2]` log |
+| ElRep | ERM LR space plus `theta1` in `[1e-5, 1e-2]` log and `theta2` in `[1e-6, 1e-3]` log |
+| CLIP-LR | `C` in `[1e-2, 1e2]` log; all other logistic-regression settings fixed |
+
+Because the reconstructed IN-9 training split has exactly 5,045 examples in
+every class, inverse-frequency Upweight produces nine weights equal to one.
+Its training loss is therefore mathematically identical to ERM here, although
+it is retained as an independently tuned comparator for protocol consistency.
+
+Run one-epoch smoke studies first:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+bash ImageNet9_Runs/submit_imagenet9_non_teacher.sh smoke
+```
+
+After those pass, launch the 50-completed-trial, four-day sweeps:
+
+```bash
+bash ImageNet9_Runs/submit_imagenet9_non_teacher.sh sweep
+```
+
+The full studies use stable paths under
+`/home/ryreu/guided_cnn/logsImageNet9/sweeps/<method>/main/`. Each trial runs in
+a fresh Python process. Optuna state is persisted in `optuna.sqlite3`, with
+`trials.csv` and `summary.json` refreshed after every attempt. If maintenance
+or the wall-time limit interrupts a study, rerun the same `sweep` command; it
+continues until 50 trials have completed. The stored contract hash prevents a
+study from resuming with changed data, objective, epochs, or search ranges.
+
+CLIP-LR is submitted by the same wrapper but uses its own driver. It caches
+frozen OpenAI CLIP RN50 features, then tunes only logistic-regression `C`.
+CLIP-ZS is not tuned. AFR is also submitted by the wrapper, but retains its
+native procedure: stage 1 trains on a deterministic 80% partition, stage 2
+reweights the remaining 20%, and validation macro class accuracy selects among
+the 33-by-5 `gamma`/`reg_coeff` grid. Its stage-1 checkpoint, embedding cache,
+and each completed stage-2 configuration persist independently across jobs.
+GALS and R4RR are launched only after their teacher maps have been generated
+and audited.

@@ -33,9 +33,19 @@ held_out_official_variants:
   - no_fg
 
 tuning:
-  completed_trials_per_method: 20
-  methods:
+  optuna_completed_trials_per_method: 50
+  optuna_methods:
     - erm
+    - upweight
+    - abn
+    - elrep
+    - clip_lr
     - gals
     - r4rr
-
+  method_specific:
+    clip_zs: no_tuning
+    afr:
+      strategy: native_two_stage_grid
+      gamma: [4.0, 20.0, 0.5]
+      reg_coeff: [0.0, 0.1, 0.2, 0.3, 0.4]
+      configurations: 165
