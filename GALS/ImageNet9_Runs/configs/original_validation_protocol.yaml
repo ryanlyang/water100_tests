@@ -1,0 +1,41 @@
+dataset: imagenet9_backgrounds_challenge
+class_order:
+  - dog
+  - bird
+  - vehicle
+  - reptile
+  - carnivore
+  - insect
+  - instrument
+  - primate
+  - fish
+
+training:
+  split: original_train
+  samples_per_class: 5045
+
+model_selection:
+  split: reconstructed_original_validation
+  samples_per_class: 450
+  objective: macro_class_accuracy
+  checkpoint_constraint_r4rr: after_alignment_start
+
+# These are final evaluation sets. They must never be read by an Optuna
+# objective, pruning decision, checkpoint selector, or prompt-selection step.
+held_out_official_variants:
+  - original
+  - mixed_same
+  - mixed_rand
+  - mixed_next
+  - only_fg
+  - only_bg_b
+  - only_bg_t
+  - no_fg
+
+tuning:
+  completed_trials_per_method: 20
+  methods:
+    - erm
+    - gals
+    - r4rr
+

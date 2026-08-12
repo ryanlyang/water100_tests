@@ -45,3 +45,25 @@ for validation.
 
 The vendored `assets/in_to_in9.json` and `assets/in9_classes.txt` files come
 from the official MadryLab Backgrounds Challenge repository.
+
+## Loader and model-selection audit
+
+The experiment uses the reconstructed Original validation split only for
+hyperparameter and checkpoint selection. The fixed objective is macro class
+accuracy. Official `original`, `mixed_same`, `mixed_rand`, `mixed_next`, and
+diagnostic variants are final evaluation data and must not enter Optuna,
+pruning, checkpoint selection, or prompt selection. This policy is recorded in
+`configs/original_validation_protocol.yaml`.
+
+After preparation, submit the loader audit:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+sbatch ImageNet9_Runs/run_audit_imagenet9_loaders.sbatch
+```
+
+The audit verifies all train, validation, and official-variant paths and class
+counts, checks train/validation disjointness, and decodes representative images
+through the deterministic evaluation transform. The manifest loader preserves
+`sample_id` in every item; this is the key used to join training images to
+teacher maps in the next stage.
