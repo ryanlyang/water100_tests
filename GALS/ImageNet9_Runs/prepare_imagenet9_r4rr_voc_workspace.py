@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,13 +47,23 @@ class ManifestSample:
     path: Path
     label: int
     class_name: str
+    width: int
+    height: int
 
 
 def load_training_samples(manifest: Path) -> List[ManifestSample]:
     samples: List[ManifestSample] = []
     with manifest.open(newline="") as handle:
         reader = csv.DictReader(handle)
-        required = {"sample_id", "source_path", "label", "class_name", "split"}
+        required = {
+            "sample_id",
+            "source_path",
+            "label",
+            "class_name",
+            "split",
+            "image_width",
+            "image_height",
+        }
         missing = required.difference(reader.fieldnames or ())
         if missing:
             raise RuntimeError(f"Manifest is missing required columns {sorted(missing)}: {manifest}")
@@ -71,12 +82,20 @@ def load_training_samples(manifest: Path) -> List[ManifestSample]:
             source = Path(row["source_path"])
             if not source.is_file():
                 raise FileNotFoundError(source)
+            width = int(row["image_width"])
+            height = int(row["image_height"])
+            if width <= 0 or height <= 0:
+                raise RuntimeError(
+                    f"Invalid image dimensions for {row['sample_id']}: {width}x{height}"
+                )
             samples.append(
                 ManifestSample(
                     sample_id=row["sample_id"].strip(),
                     path=source,
                     label=label,
                     class_name=class_name,
+                    width=width,
+                    height=height,
                 )
             )
     if not samples:
@@ -191,6 +210,52 @@ def ensure_image_links(samples: Sequence[ManifestSample], image_dir: Path) -> Di
     return {"created": created, "reused": reused}
 
 
+def annotation_xml(sample: ManifestSample) -> str:
+    annotation = ET.Element("annotation")
+    ET.SubElement(annotation, "filename").text = f"{sample.sample_id}.jpg"
+    size = ET.SubElement(annotation, "size")
+    ET.SubElement(size, "width").text = str(sample.width)
+    ET.SubElement(size, "height").text = str(sample.height)
+    ET.SubElement(size, "depth").text = "3"
+    obj = ET.SubElement(annotation, "object")
+    ET.SubElement(obj, "name").text = sample.class_name
+    ET.SubElement(obj, "difficult").text = "0"
+    box = ET.SubElement(obj, "bndbox")
+    ET.SubElement(box, "xmin").text = "0"
+    ET.SubElement(box, "ymin").text = "0"
+    ET.SubElement(box, "xmax").text = str(sample.width)
+    ET.SubElement(box, "ymax").text = str(sample.height)
+    ET.indent(annotation, space="  ")
+    return ET.tostring(annotation, encoding="unicode") + "\n"
+
+
+def ensure_class_annotations(
+    samples: Sequence[ManifestSample],
+    annotation_dir: Path,
+) -> Dict[str, int]:
+    annotation_dir.mkdir(parents=True, exist_ok=True)
+    expected_names = {f"{sample.sample_id}.xml" for sample in samples}
+    existing_names = {entry.name for entry in annotation_dir.iterdir()}
+    extras = sorted(existing_names - expected_names)
+    if extras:
+        raise RuntimeError(
+            f"VOC Annotations contains {len(extras)} unexpected entries; refusing to mix "
+            f"datasets: {extras[:10]}"
+        )
+
+    created = 0
+    reused = 0
+    for sample in samples:
+        destination = annotation_dir / f"{sample.sample_id}.xml"
+        expected = annotation_xml(sample)
+        if destination.is_file() and destination.read_text() == expected:
+            reused += 1
+        else:
+            atomic_write_text(destination, expected)
+            created += 1
+    return {"created": created, "reused": reused}
+
+
 def class_label_lines(
     samples: Sequence[ManifestSample],
     positive_class: str,
@@ -258,6 +323,7 @@ def write_workspace_manifest(
 def audit_workspace(
     samples: Sequence[ManifestSample],
     image_dir: Path,
+    annotation_dir: Path,
     set_dir: Path,
 ) -> Dict[str, object]:
     ids = [sample.sample_id for sample in samples]
@@ -296,12 +362,28 @@ def audit_workspace(
     if broken:
         raise RuntimeError(f"Invalid or broken image links: {broken[:10]}")
 
+    annotation_paths = list(annotation_dir.glob("*.xml"))
+    if len(annotation_paths) != len(samples):
+        raise RuntimeError(
+            f"Expected {len(samples)} class annotations, found {len(annotation_paths)}"
+        )
+    sample_by_id = {sample.sample_id: sample for sample in samples}
+    for path in annotation_paths:
+        sample = sample_by_id.get(path.stem)
+        if sample is None:
+            raise RuntimeError(f"Unexpected annotation: {path}")
+        root = ET.parse(path).getroot()
+        names = [node.text for node in root.findall("./object/name")]
+        if names != [sample.class_name]:
+            raise RuntimeError(f"Annotation class mismatch in {path}: {names}")
+
     return {
         "status": "ok",
         "num_images": len(samples),
         "class_names": list(CLASS_NAMES),
         "class_counts": dict(Counter(sample.class_name for sample in samples)),
         "num_image_symlinks": len(links),
+        "num_image_level_class_annotations": len(annotation_paths),
         "num_class_label_files": 2 * len(CLASS_NAMES),
         "positive_labels_per_image_per_split": 1,
         "source_split": "reconstructed_original_train",
@@ -319,6 +401,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     workspace_root = args.workspace_root.resolve()
     voc_root = workspace_root / "VOCdevkit" / "VOC2012"
     image_dir = voc_root / "JPEGImages"
+    annotation_dir = voc_root / "Annotations"
     set_dir = voc_root / "ImageSets" / "Main"
     metadata_dir = workspace_root / "metadata"
 
@@ -334,11 +417,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"[INFO] class order={list(CLASS_NAMES)}")
 
     link_stats = ensure_image_links(samples, image_dir)
+    annotation_stats = ensure_class_annotations(samples, annotation_dir)
     write_image_sets(samples, set_dir)
     write_workspace_manifest(samples, image_dir, metadata_dir / "workspace_manifest.csv")
-    audit = audit_workspace(samples, image_dir, set_dir)
+    audit = audit_workspace(samples, image_dir, annotation_dir, set_dir)
     audit["links_created"] = link_stats["created"]
     audit["links_reused"] = link_stats["reused"]
+    audit["annotations_created"] = annotation_stats["created"]
+    audit["annotations_reused"] = annotation_stats["reused"]
 
     contract = {
         "schema_version": WORKSPACE_SCHEMA_VERSION,
@@ -359,6 +445,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     atomic_write_text(metadata_dir / "workspace_audit.json", json.dumps(audit, indent=2, sort_keys=True) + "\n")
 
     print(f"[DONE] links created={link_stats['created']} reused={link_stats['reused']}")
+    print(
+        f"[DONE] class annotations created={annotation_stats['created']} "
+        f"reused={annotation_stats['reused']}"
+    )
     print(f"[DONE] VOC root: {voc_root}")
     print(f"[DONE] class label files: {set_dir}")
     print(f"[DONE] audit: {metadata_dir / 'workspace_audit.json'}")

@@ -27,6 +27,9 @@ RISE_SEED="${RISE_SEED:-0}"
 RISE_IMAGE_BATCH_SIZE="${RISE_IMAGE_BATCH_SIZE:-4}"
 RISE_MAX_MASKED_BATCH="${RISE_MAX_MASKED_BATCH:-128}"
 RISE_MASKS_PATH="${RISE_MASKS_PATH:-$RUN_ROOT/rise_masks/waterbirds_gals_N${RISE_NUM_MASKS}_s${RISE_GRID_SIZE}_p${RISE_P1}_seed${RISE_SEED}_224x224.npy}"
+NUM_WORKERS="${NUM_WORKERS:-0}"
+EVAL_PARTITION="${EVAL_PARTITION:-tier3}"
+EVAL_TIME="${EVAL_TIME:-1-12:00:00}"
 DRY_RUN="${DRY_RUN:-0}"
 ALLOW_PARTIAL="${ALLOW_PARTIAL:-0}"
 
@@ -171,6 +174,7 @@ export LOG_DIR CHECKPOINT_RUN_ROOT RUN_ROOT SEEDS_CSV SPLIT TARGET_MODE
 export MASK_THRESHOLD MAX_SAMPLES SAMPLE_SEED
 export RISE_NUM_MASKS RISE_GRID_SIZE RISE_P1 RISE_SEED
 export RISE_IMAGE_BATCH_SIZE RISE_MAX_MASKED_BATCH RISE_MASKS_PATH
+export NUM_WORKERS
 
 JOB_FILE="$RUN_ROOT/submitted_jobs_$(date +%Y%m%d_%H%M%S).csv"
 printf 'dataset,method,status,job_id\n' > "$JOB_FILE"
@@ -179,7 +183,7 @@ for dataset in "${DATASETS[@]}"; do
   for method in "${METHODS[@]}"; do
     job_name="pgr5_wb${dataset}_${method}"
     if [[ "$DRY_RUN" == "1" ]]; then
-      echo "[DRY RUN] sbatch --job-name=$job_name --export=ALL,DATASET=$dataset,METHOD=$method $WORKER"
+      echo "[DRY RUN] sbatch --partition=$EVAL_PARTITION --time=$EVAL_TIME --job-name=$job_name --export=ALL,DATASET=$dataset,METHOD=$method,NUM_WORKERS=$NUM_WORKERS $WORKER"
       status="DRY_RUN"
       job_id="DRY_RUN"
     elif ! source_pair_is_ready "$dataset" "$method" 0; then
@@ -198,8 +202,10 @@ for dataset in "${DATASETS[@]}"; do
         job_id="$queued_job_ids"
       else
         job_id="$(sbatch --parsable \
+          --partition="$EVAL_PARTITION" \
+          --time="$EVAL_TIME" \
           --job-name="$job_name" \
-          --export="ALL,DATASET=$dataset,METHOD=$method" \
+          --export="ALL,DATASET=$dataset,METHOD=$method,NUM_WORKERS=$NUM_WORKERS" \
           "$WORKER")"
         echo "[SUBMITTED] dataset=$dataset method=$method job=$job_id"
         status="SUBMITTED"
@@ -212,6 +218,7 @@ done
 echo
 echo "[DONE] submission record: $JOB_FILE"
 echo "[DONE] RISE result root: $RUN_ROOT"
+echo "[INFO] Slurm partition=$EVAL_PARTITION time=$EVAL_TIME num_workers=$NUM_WORKERS"
 echo "[INFO] These jobs reuse completed checkpoints; they do not retrain models."
 echo "[INFO] After all jobs finish:"
 echo "  cd $SCRIPT_DIR"
