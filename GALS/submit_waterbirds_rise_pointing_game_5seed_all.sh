@@ -3,6 +3,12 @@
 
 set -Eeuo pipefail
 
+# The worker activates its own Conda environment. Prevent inherited SBATCH
+# settings from asking Slurm to reconstruct the submit host's login environment,
+# which can leave jobs held with "user env retrieval failed" before bash starts.
+unset SBATCH_GET_USER_ENV SBATCH_EXPORT SBATCH_EXPORT_FILE
+export SLURM_EXPORT_ENV=ALL
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKER="${WORKER:-$SCRIPT_DIR/run_waterbirds_rise_pointing_game_5seed_method.sh}"
 LOG_DIR="${LOG_DIR:-/home/ryreu/guided_cnn/logsWaterbird}"
