@@ -49,10 +49,17 @@ N_TRIALS=${N_TRIALS:-50}
 SWEEP_SEED=${SWEEP_SEED:-0}
 RUN_ID=${RUN_ID:-${SLURM_JOB_ID:-manual}}
 RESUME_CSV=${RESUME_CSV:-}
+DEFAULT_OUTPUT_CSV="$LOG_DIR/wb95_r4rr_${ALIGNMENT_LOSS}_sweep_${RUN_ID}.csv"
+# Slurm keeps the same job ID when a node failure requeues a job. Resume the
+# per-trial CSV automatically so completed trials are restored into Optuna.
+if [[ -z "$RESUME_CSV" && "${SLURM_RESTART_COUNT:-0}" -gt 0 && -s "$DEFAULT_OUTPUT_CSV" ]]; then
+  RESUME_CSV="$DEFAULT_OUTPUT_CSV"
+  echo "[REQUEUE] Auto-resuming after SLURM_RESTART_COUNT=${SLURM_RESTART_COUNT}: $RESUME_CSV"
+fi
 if [[ -n "$RESUME_CSV" && -z "${OUTPUT_CSV+x}" ]]; then
   OUTPUT_CSV="$RESUME_CSV"
 else
-  OUTPUT_CSV=${OUTPUT_CSV:-$LOG_DIR/wb95_r4rr_${ALIGNMENT_LOSS}_sweep_${RUN_ID}.csv}
+  OUTPUT_CSV=${OUTPUT_CSV:-$DEFAULT_OUTPUT_CSV}
 fi
 
 SWEEP_PY="$GALS_ROOT/RightForTheRightRegions/repro_runs/r4rr/sweeps/r4rr_waterbirds_sweep.py"
