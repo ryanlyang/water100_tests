@@ -121,3 +121,38 @@ the 33-by-5 `gamma`/`reg_coeff` grid. Its stage-1 checkpoint, embedding cache,
 and each completed stage-2 configuration persist independently across jobs.
 GALS and R4RR are launched only after their teacher maps have been generated
 and audited.
+
+## GALS ViT map quality control
+
+ImageNet-9 GALS uses OpenAI CLIP ViT-B/32 transformer relevance maps. Each
+training image receives two maps using its known coarse class and the templates
+`an image of a/an ...` and `a photo of a/an ...`. The nine concepts follow the
+benchmark class names, except `instrument` is written as `musical instrument`
+to avoid the non-visual meaning. No prompt names a background or context.
+
+Generate the fixed diagnostic subset before producing all maps:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+sbatch ImageNet9_Runs/run_imagenet9_gals_vit_maps.sbatch
+```
+
+This deterministically selects 20 training images per class (180 total), writes
+maps under
+`/home/ryreu/guided_cnn/data/imagenet9/gals_maps/clip_vit_b32_transformer_v1/`,
+and creates one QA sheet per class under `qa/`. Inspect those sheets and freeze
+the prompt contract before the full generation job.
+
+After quality control passes, the complete 45,405-image run can be submitted as
+a resumable 46-task array with four concurrent GPUs:
+
+```bash
+sbatch --partition=tier3 --time=4-00:00:00 --array=0-45%4 \
+  --export=ALL,MODE=full,CHUNK_SIZE=1000 \
+  ImageNet9_Runs/run_imagenet9_gals_vit_maps.sbatch
+```
+
+Every map is named by the unique ImageNet source `sample_id`, retains the GALS
+`unnormalized_attentions` tensor schema, and is recorded in a per-shard CSV.
+Existing valid files are reused after interruption. Only Original training
+images are selected; validation and all official variants are excluded.
