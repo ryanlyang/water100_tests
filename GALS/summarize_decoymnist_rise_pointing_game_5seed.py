@@ -166,6 +166,7 @@ def summarize_method(method_dir: Path, seeds: Sequence[int]) -> Dict[str, object
         "rise_masks_sha256": rows[0]["rise_masks_sha256"],
         "n_seeds": len(rows),
         "seeds": ",".join(str(seed) for seed in seeds),
+        "evaluation_type": "deterministic_fixed" if method in ("clip_zs", "clip_lr") else "five_seed",
     }
     for key in RATE_KEYS:
         stats = mean_std(float(row[f"{key}_pct"]) for row in rows)
@@ -222,7 +223,8 @@ def main() -> None:
         if method_dir.is_dir() and any(
             method_dir.glob("seed_*/pointing_game/pointing_game_summary.csv")
         ):
-            summaries.append(summarize_method(method_dir, seeds))
+            method_seeds = [0] if method_dir.name in ("clip_zs", "clip_lr") else seeds
+            summaries.append(summarize_method(method_dir, method_seeds))
     if not summaries:
         raise RuntimeError(f"No complete RISE method results found under {run_root}")
     mask_hashes = {str(summary["rise_masks_sha256"]) for summary in summaries}
@@ -232,6 +234,7 @@ def main() -> None:
             f"{sorted(mask_hashes)}"
         )
     write_csv(run_root / "pointing_game_all_methods_5seed_summary.csv", summaries)
+    write_csv(run_root / "pointing_game_all_methods_summary.csv", summaries)
     atomic_json(run_root / "pointing_game_all_methods_5seed_summary.json", summaries)
     print(f"[DONE] {run_root / 'pointing_game_all_methods_5seed_summary.csv'}")
 

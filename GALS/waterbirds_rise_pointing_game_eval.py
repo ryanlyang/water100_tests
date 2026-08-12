@@ -10,7 +10,7 @@ import os
 import random
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -18,6 +18,7 @@ import torch
 import torch.nn as nn
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
 
 from gals_rise_utils import load_or_create_mask_bank, rise_from_probabilities_batch
 from waterbirds_pointing_game_eval import (
@@ -36,7 +37,17 @@ from waterbirds_pointing_game_eval import (
 )
 
 
-SUPPORTED_METHODS = ("vanilla", "elrep", "upweight", "abn", "gals", "afr", "r4rr")
+SUPPORTED_METHODS = (
+    "vanilla",
+    "elrep",
+    "upweight",
+    "abn",
+    "gals",
+    "afr",
+    "r4rr",
+    "clip_zs",
+    "clip_lr",
+)
 MASK_PROTOCOL_VERSION = 1
 PRIMARY_PG_PROTOCOL = "rise_pixel_argmax"
 EXPLAINER = "rise"
@@ -64,6 +75,8 @@ class WaterbirdsPointingDataset(Dataset):
         max_samples: int,
         sample_seed: int,
         mask_threshold: int,
+        preprocess: Optional[Callable[[Image.Image], torch.Tensor]] = None,
+        mask_preprocess: Optional[Callable[[Image.Image], Image.Image]] = None,
     ) -> None:
         metadata_path = data_path / "metadata.csv"
         if not metadata_path.is_file():
@@ -76,7 +89,8 @@ class WaterbirdsPointingDataset(Dataset):
 
         self.data_path = data_path
         self.mask_threshold = int(mask_threshold)
-        self.preprocess = build_preprocess()
+        self.preprocess = preprocess if preprocess is not None else build_preprocess()
+        self.mask_preprocess = mask_preprocess
         self.records: List[Dict[str, object]] = []
         missing_images: List[str] = []
         missing_masks: List[str] = []
@@ -121,7 +135,10 @@ class WaterbirdsPointingDataset(Dataset):
         image = open_pil_with_retry(Path(str(record["image_path"])), mode="RGB")
         image_tensor = self.preprocess(image)
         mask_image = open_pil_with_retry(Path(str(record["mask_path"])), mode="L")
-        mask_image = mask_image.resize((IMAGE_SIZE, IMAGE_SIZE), Image.NEAREST)
+        if self.mask_preprocess is None:
+            mask_image = mask_image.resize((IMAGE_SIZE, IMAGE_SIZE), Image.NEAREST)
+        else:
+            mask_image = self.mask_preprocess(mask_image)
         mask = (np.asarray(mask_image, dtype=np.uint8) > self.mask_threshold).astype(np.uint8)
         return (
             image_tensor,
@@ -160,6 +177,148 @@ class WaterbirdsProbabilityModel(nn.Module):
             probability_1 = torch.sigmoid(logits.reshape(-1))
             return torch.stack((1.0 - probability_1, probability_1), dim=1)
         return torch.softmax(logits, dim=1)
+
+
+class CLIPZeroShotProbabilityModel(nn.Module):
+    """OpenAI CLIP RN50 with the same prompt ensemble as the ZS baseline."""
+
+    def __init__(self, model: nn.Module, text_features: np.ndarray) -> None:
+        super().__init__()
+        self.model = model
+        self.register_buffer(
+            "text_features",
+            torch.from_numpy(text_features).float(),
+            persistent=False,
+        )
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        features = self.model.encode_image(images).float()
+        features = features / features.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+        scale = self.model.logit_scale.exp().float().clamp(max=100.0)
+        logits = scale * features @ self.text_features.t()
+        return torch.softmax(logits, dim=1)
+
+
+class CLIPLinearProbabilityModel(nn.Module):
+    """Frozen CLIP image encoder plus an sklearn-fitted logistic head."""
+
+    def __init__(
+        self,
+        model: nn.Module,
+        coefficients: np.ndarray,
+        intercept: np.ndarray,
+    ) -> None:
+        super().__init__()
+        self.model = model
+        self.register_buffer(
+            "coefficients",
+            torch.from_numpy(np.asarray(coefficients, dtype=np.float32)),
+            persistent=False,
+        )
+        self.register_buffer(
+            "intercept",
+            torch.from_numpy(np.asarray(intercept, dtype=np.float32)),
+            persistent=False,
+        )
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        features = self.model.encode_image(images).float()
+        features = features / features.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+        logits = features @ self.coefficients.t() + self.intercept
+        if logits.shape[1] == 1:
+            probability_1 = torch.sigmoid(logits[:, 0])
+            return torch.stack((1.0 - probability_1, probability_1), dim=1)
+        return torch.softmax(logits, dim=1)
+
+
+def build_clip_mask_preprocess(image_size: int) -> Callable[[Image.Image], Image.Image]:
+    return transforms.Compose(
+        [
+            transforms.Resize(image_size, interpolation=transforms.InterpolationMode.NEAREST),
+            transforms.CenterCrop(image_size),
+        ]
+    )
+
+
+def build_clip_probability_model(
+    method: str,
+    data_path: Path,
+    clip_model_name: str,
+    clip_c: float,
+    clip_feature_batch_size: int,
+    num_workers: int,
+    seed: int,
+    device: torch.device,
+) -> Tuple[nn.Module, Callable[[Image.Image], torch.Tensor], Dict[str, object]]:
+    import run_clip_lr_sweep as clip_lr
+    import run_clip_zeroshot_waterbirds as clip_zs
+
+    clip_module = clip_lr._try_import_clip()
+    try:
+        model, preprocess = clip_module.load(clip_model_name, device=str(device), jit=False)
+    except TypeError:
+        model, preprocess = clip_module.load(clip_model_name, device=str(device))
+    model.eval()
+
+    details: Dict[str, object] = {
+        "clip_model": clip_model_name,
+        "clip_c": float(clip_c) if method == "clip_lr" else "",
+        "clip_penalty": "l2" if method == "clip_lr" else "",
+        "clip_solver": "lbfgs" if method == "clip_lr" else "",
+        "clip_fit_intercept": True if method == "clip_lr" else "",
+    }
+    if method == "clip_zs":
+        class_names = ("landbird", "waterbird")
+        templates = clip_zs._default_templates()
+        text_features = clip_zs._build_text_features(
+            clip_module=clip_module,
+            model=model,
+            device=str(device),
+            class_names=class_names,
+            templates=templates,
+        )
+        details["clip_class_names"] = "|".join(class_names)
+        details["clip_num_templates"] = len(templates)
+        return CLIPZeroShotProbabilityModel(model, text_features), preprocess, details
+
+    from sklearn.linear_model import LogisticRegression
+
+    root, cfg, Waterbirds = clip_lr._load_waterbirds(str(data_path))
+    train_dataset = Waterbirds(root=root, cfg=cfg, split="train", transform=preprocess)
+    train_features, train_labels, _groups = clip_lr._extract_features(
+        train_dataset,
+        model,
+        str(device),
+        int(clip_feature_batch_size),
+        int(num_workers),
+    )
+    train_features = np.ascontiguousarray(
+        clip_lr._l2_normalize(train_features),
+        dtype=np.float64,
+    )
+    classifier = LogisticRegression(
+        random_state=int(seed),
+        C=float(clip_c),
+        penalty="l2",
+        solver="lbfgs",
+        fit_intercept=True,
+        max_iter=5000,
+        n_jobs=1,
+        verbose=0,
+    )
+    try:
+        from threadpoolctl import threadpool_limits
+
+        with threadpool_limits(limits=1):
+            classifier.fit(train_features, train_labels)
+    except Exception:
+        classifier.fit(train_features, train_labels)
+    details["clip_train_samples"] = int(train_labels.shape[0])
+    return (
+        CLIPLinearProbabilityModel(model, classifier.coef_, classifier.intercept_),
+        preprocess,
+        details,
+    )
 
 
 def build_runner(
@@ -207,11 +366,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset-tag", choices=("95", "100"), required=True)
     parser.add_argument("--data-path", type=Path, required=True)
     parser.add_argument("--mask-root", type=Path, required=True)
-    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--afr-stage1-checkpoint", type=Path)
     parser.add_argument("--afr-root", type=Path, required=True)
     parser.add_argument("--method", choices=SUPPORTED_METHODS, required=True)
     parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--clip-model", default="RN50")
+    parser.add_argument("--clip-c", type=float, default=1.0)
+    parser.add_argument("--clip-feature-batch-size", type=int, default=256)
     parser.add_argument("--split", choices=("train", "val", "test"), default="test")
     parser.add_argument("--target-mode", choices=("label", "prediction"), default="label")
     parser.add_argument("--mask-threshold", type=int, default=0)
@@ -239,7 +401,7 @@ def main() -> None:
 
     data_path = args.data_path.expanduser().resolve()
     mask_root = args.mask_root.expanduser().resolve()
-    checkpoint = args.checkpoint.expanduser().resolve()
+    checkpoint = args.checkpoint.expanduser().resolve() if args.checkpoint is not None else None
     stage1_checkpoint = (
         args.afr_stage1_checkpoint.expanduser().resolve()
         if args.afr_stage1_checkpoint is not None
@@ -248,9 +410,12 @@ def main() -> None:
     afr_root = args.afr_root.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
     mask_bank_path = args.rise_masks_path.expanduser().resolve()
-    for required in (data_path, mask_root, checkpoint):
+    for required in (data_path, mask_root):
         if not required.exists():
             raise FileNotFoundError(f"Missing required path: {required}")
+    is_clip = args.method in ("clip_zs", "clip_lr")
+    if not is_clip and (checkpoint is None or not checkpoint.is_file()):
+        raise FileNotFoundError(f"Missing required checkpoint: {checkpoint}")
     if args.method == "afr" and (stage1_checkpoint is None or not stage1_checkpoint.is_file()):
         raise FileNotFoundError(f"Missing AFR stage-1 checkpoint: {stage1_checkpoint}")
 
@@ -259,6 +424,39 @@ def main() -> None:
         requested_device = "cpu"
     device = torch.device(requested_device)
 
+    runner: Optional[MethodRunnerBase] = None
+    clip_details: Dict[str, object] = {
+        "clip_model": "",
+        "clip_c": "",
+        "clip_penalty": "",
+        "clip_solver": "",
+        "clip_fit_intercept": "",
+    }
+    if is_clip:
+        probability_model, preprocess, clip_details = build_clip_probability_model(
+            method=args.method,
+            data_path=data_path,
+            clip_model_name=str(args.clip_model),
+            clip_c=float(args.clip_c),
+            clip_feature_batch_size=int(args.clip_feature_batch_size),
+            num_workers=int(args.num_workers),
+            seed=int(args.seed),
+            device=device,
+        )
+        mask_preprocess = build_clip_mask_preprocess(IMAGE_SIZE)
+    else:
+        assert checkpoint is not None
+        runner = build_runner(
+            method=args.method,
+            checkpoint=checkpoint,
+            stage1_checkpoint=stage1_checkpoint,
+            afr_root=afr_root,
+            device=device,
+        )
+        probability_model = WaterbirdsProbabilityModel(args.method, runner)
+        preprocess = None
+        mask_preprocess = None
+
     dataset = WaterbirdsPointingDataset(
         data_path=data_path,
         mask_root=mask_root,
@@ -266,6 +464,8 @@ def main() -> None:
         max_samples=int(args.max_samples),
         sample_seed=int(args.sample_seed),
         mask_threshold=int(args.mask_threshold),
+        preprocess=preprocess,
+        mask_preprocess=mask_preprocess,
     )
     loader = DataLoader(
         dataset,
@@ -274,14 +474,7 @@ def main() -> None:
         num_workers=int(args.num_workers),
         pin_memory=(device.type == "cuda"),
     )
-    runner = build_runner(
-        method=args.method,
-        checkpoint=checkpoint,
-        stage1_checkpoint=stage1_checkpoint,
-        afr_root=afr_root,
-        device=device,
-    )
-    probability_model = WaterbirdsProbabilityModel(args.method, runner).to(device).eval()
+    probability_model = probability_model.to(device).eval()
 
     masks_np, mask_hash = load_or_create_mask_bank(
         path=mask_bank_path,
@@ -308,7 +501,9 @@ def main() -> None:
         f"split={args.split} samples={len(dataset)} device={device} explainer={EXPLAINER}",
         flush=True,
     )
-    print(f"[INFO] checkpoint={checkpoint}", flush=True)
+    print(f"[INFO] checkpoint={checkpoint or ''}", flush=True)
+    if is_clip:
+        print(f"[INFO] clip={clip_details}", flush=True)
     if stage1_checkpoint is not None:
         print(f"[INFO] afr_stage1_checkpoint={stage1_checkpoint}", flush=True)
     print(f"[INFO] mask_source={mask_root} protocol=CUB segmentation", flush=True)
@@ -403,7 +598,8 @@ def main() -> None:
             if processed == len(dataset) or processed % 100 <= len(labels_np):
                 print(f"[PROGRESS] {processed}/{len(dataset)}", flush=True)
     finally:
-        runner.close()
+        if runner is not None:
+            runner.close()
 
     if not rows:
         raise RuntimeError("No Waterbirds samples were evaluated")
@@ -454,8 +650,9 @@ def main() -> None:
         "mask_threshold": int(args.mask_threshold),
         "max_samples": int(args.max_samples),
         "sample_seed": int(args.sample_seed),
-        "checkpoint": str(checkpoint),
+        "checkpoint": str(checkpoint) if checkpoint is not None else "",
         "afr_stage1_checkpoint": str(stage1_checkpoint) if stage1_checkpoint else "",
+        **clip_details,
         "rise_num_masks": int(args.rise_num_masks),
         "rise_grid_size": int(args.rise_grid_size),
         "rise_p1": float(args.rise_p1),

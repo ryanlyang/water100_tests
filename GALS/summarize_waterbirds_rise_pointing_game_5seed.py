@@ -113,6 +113,7 @@ def summarize_method(method_dir: Path, seeds: Sequence[int]) -> Dict[str, object
         "mask_source": rows[0]["mask_source"],
         "n_seeds": len(rows),
         "seeds": ",".join(str(seed) for seed in seeds),
+        "evaluation_type": "deterministic_fixed" if method in ("clip_zs", "clip_lr") else "five_seed",
         "rise_num_masks": rows[0]["rise_num_masks"],
         "rise_grid_size": rows[0]["rise_grid_size"],
         "rise_p1": rows[0]["rise_p1"],
@@ -169,10 +170,12 @@ def main() -> None:
         if method_dir.is_dir() and any(
             method_dir.glob("seed_*/pointing_game/pointing_game_summary.csv")
         ):
-            summaries.append(summarize_method(method_dir, seeds))
+            method_seeds = [0] if method_dir.name in ("clip_zs", "clip_lr") else seeds
+            summaries.append(summarize_method(method_dir, method_seeds))
     if not summaries:
         raise RuntimeError(f"No Waterbirds RISE results found under {run_root}")
     write_csv(run_root / "pointing_game_rise_all_methods_5seed_summary.csv", summaries)
+    write_csv(run_root / "pointing_game_rise_all_methods_summary.csv", summaries)
     atomic_json(run_root / "pointing_game_rise_all_methods_5seed_summary.json", summaries)
     print(
         f"[DONE] {run_root / 'pointing_game_rise_all_methods_5seed_summary.csv'}",

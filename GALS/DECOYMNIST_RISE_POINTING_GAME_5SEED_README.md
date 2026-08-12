@@ -20,6 +20,13 @@ not retrain any models and does not overwrite the previous Grad-CAM results.
 
 Methods: `vanilla`, `elrep`, `upweight`, `abn`, `gals`, `afr`, and `r4rr`.
 
+The fixed OpenAI CLIP RN50 baselines are also supported. CLIP-ZS uses its
+three-template digit prompt ensemble; CLIP-LR uses frozen L2-normalized RN50
+features and the fixed `C=0.2515000498909345` logistic head. They are
+deterministic and therefore reported once (`n=1`), rather than as five copied
+seed rows. Their 28x28 RISE masks are upsampled only when perturbing CLIP's
+224x224 input, then accumulated on the original 28x28 grid for evaluation.
+
 ## Full evaluation
 
 ```bash
@@ -35,6 +42,12 @@ Outputs are written under:
 
 Each method job processes its five checkpoints sequentially. Completed seed
 summaries are reused on resubmission.
+
+Submit the two deterministic CLIP jobs to `debug` with:
+
+```bash
+bash submit_decoymnist_clip_rise_pointing_game.sh
+```
 
 ## Small pilot
 

@@ -4,10 +4,10 @@
 #SBATCH --account=reu-aisocial
 #SBATCH --partition=tier3
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=1-00:00:00
+#SBATCH --time=0-06:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=24G
+#SBATCH --mem=16G
 #SBATCH --output=/home/ryreu/guided_cnn/logsMNIST/%x_%j.out
 #SBATCH --error=/home/ryreu/guided_cnn/logsMNIST/%x_%j.err
 #SBATCH --signal=TERM@180

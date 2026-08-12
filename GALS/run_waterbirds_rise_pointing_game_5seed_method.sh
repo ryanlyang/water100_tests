@@ -4,10 +4,10 @@
 #SBATCH --account=reu-aisocial
 #SBATCH --partition=tier3
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=3-00:00:00
+#SBATCH --time=1-12:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --mem=24G
 #SBATCH --output=/home/ryreu/guided_cnn/logsWaterbird/%x_%j.out
 #SBATCH --error=/home/ryreu/guided_cnn/logsWaterbird/%x_%j.err
 #SBATCH --signal=TERM@180

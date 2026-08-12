@@ -6,7 +6,8 @@ with RISE. It does not retrain or modify any model.
 ## Fixed protocol
 
 - Datasets: Waterbirds-95 and Waterbirds-100
-- Methods: Vanilla, ElRep, Upweight, ABN, GALS, AFR, and R4RR
+- Five-seed methods: Vanilla, ElRep, Upweight, ABN, GALS, AFR, and R4RR
+- Fixed baselines: OpenAI CLIP RN50 zero-shot and CLIP RN50 logistic regression
 - Seeds: `0,1,2,3,4`
 - Evaluation split: test
 - Saliency target: ground-truth class
@@ -19,6 +20,13 @@ single-logit GALS, Upweight, and ABN checkpoints, the score adapter uses
 `[1-sigmoid(z), sigmoid(z)]`. Other checkpoints use softmax probabilities.
 ABN therefore uses RISE over its classifier like every other method; its native
 attention branch is not substituted for RISE.
+
+CLIP-ZS uses the same eight-prompt Waterbirds ensemble as the classification
+baseline. CLIP-LR refits the deterministic `l2`/`lbfgs` logistic head on frozen,
+L2-normalized RN50 image features using the selected validation-set values
+`C=30.481669053249504` (Waterbirds-95) and `C=0.2515000498909345`
+(Waterbirds-100). These fixed baselines are evaluated once and reported with
+`n=1`; they are not represented as five independent random-seed runs.
 
 The RISE mask bank is generated once and shared by every dataset, method, and
 seed. Its SHA-256 digest is recorded in every result. Saliency arrays are
@@ -51,12 +59,18 @@ Run the same command again after the remaining training jobs finish. It skips
 incomplete pairs, active RISE jobs, and already-completed RISE evaluations, so
 rerunning it does not duplicate work.
 
-This submits 14 three-day A100 jobs, one for each dataset-method pair. Each job
+This submits 14 36-hour A100 jobs, one for each dataset-method pair. Each job
 evaluates all five seeds sequentially and resumes from valid per-seed result
 CSVs. Results are written to:
 
 ```text
 /home/ryreu/guided_cnn/logsWaterbird/pointing_game_5seed_rise/
+```
+
+Submit the four deterministic CLIP evaluations to the debug partition with:
+
+```bash
+bash submit_waterbirds_clip_rise_pointing_game.sh
 ```
 
 Inspect submissions without queuing jobs:
