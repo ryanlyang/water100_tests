@@ -40,7 +40,9 @@ TARGET_MODE="${TARGET_MODE:-label}"
 MASK_THRESHOLD="${MASK_THRESHOLD:-0}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 SAMPLE_SEED="${SAMPLE_SEED:-0}"
-NUM_WORKERS="${NUM_WORKERS:-${SLURM_CPUS_PER_TASK:-4}}"
+# RISE is GPU-bound. Single-process loading avoids intermittent RC worker/pin
+# memory IPC failures without materially changing total evaluation time.
+NUM_WORKERS="${NUM_WORKERS:-0}"
 
 RISE_NUM_MASKS="${RISE_NUM_MASKS:-2000}"
 RISE_GRID_SIZE="${RISE_GRID_SIZE:-8}"
@@ -83,6 +85,7 @@ echo "[RUN] output=$METHOD_DIR split=$SPLIT target_mode=$TARGET_MODE"
 echo "[RUN] masks=$MASK_ROOT (CUB segmentation)"
 echo "[RUN] RISE N=$RISE_NUM_MASKS grid=$RISE_GRID_SIZE p1=$RISE_P1 seed=$RISE_SEED"
 echo "[RUN] shared_mask_bank=$RISE_MASKS_PATH"
+echo "[RUN] dataloader_workers=$NUM_WORKERS pin_memory=false"
 which python
 
 source_manifest_is_valid() {

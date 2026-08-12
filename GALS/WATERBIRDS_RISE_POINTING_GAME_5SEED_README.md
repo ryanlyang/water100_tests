@@ -31,6 +31,9 @@ L2-normalized RN50 image features using the selected validation-set values
 The RISE mask bank is generated once and shared by every dataset, method, and
 seed. Its SHA-256 digest is recorded in every result. Saliency arrays are
 aggregated online and are not saved, avoiding hundreds of gigabytes of output.
+The evaluation DataLoader defaults to a single process with pinned memory off;
+RISE is GPU-bound, and this avoids intermittent worker IPC failures observed on
+the research cluster.
 
 ## Submit
 

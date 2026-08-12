@@ -379,7 +379,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mask-threshold", type=int, default=0)
     parser.add_argument("--image-batch-size", type=int, default=4)
     parser.add_argument("--max-masked-batch", type=int, default=128)
-    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument(
+        "--pin-memory",
+        action="store_true",
+        help="Enable CUDA pinned-memory loading (disabled by default for RC stability).",
+    )
     parser.add_argument("--max-samples", type=int, default=0)
     parser.add_argument("--sample-seed", type=int, default=0)
     parser.add_argument("--rise-num-masks", type=int, default=2000)
@@ -472,7 +477,7 @@ def main() -> None:
         batch_size=int(args.image_batch_size),
         shuffle=False,
         num_workers=int(args.num_workers),
-        pin_memory=(device.type == "cuda"),
+        pin_memory=bool(args.pin_memory and device.type == "cuda"),
     )
     probability_model = probability_model.to(device).eval()
 
