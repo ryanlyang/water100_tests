@@ -9,7 +9,7 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -20,7 +20,7 @@ from torchvision.datasets import ImageFolder
 
 from decoymnist_pointing_game_eval import CleanDigitMaskDataset, pointing_result
 from decoymnist_rise_pointing_game_eval import load_or_create_mask_bank
-from run_decoymnist_clip_vit_lr_fixed import _extract_features, _try_import_clip
+from run_decoymnist_clip_vit_lr_fixed import _try_import_clip
 
 
 DIGIT_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
@@ -50,6 +50,50 @@ def write_csv(path: Path, rows: Sequence[Dict[str, object]]) -> None:
 def l2_normalize(features: np.ndarray) -> np.ndarray:
     denominator = np.linalg.norm(features, axis=1, keepdims=True)
     return features / np.maximum(denominator, 1e-12)
+
+
+@torch.no_grad()
+def extract_clip_features(
+    dataset: Dataset,
+    model: nn.Module,
+    device: torch.device,
+    batch_size: int,
+    num_workers: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Extract one C-contiguous float64 feature matrix without list/concat copies."""
+    loader = DataLoader(
+        dataset,
+        batch_size=int(batch_size),
+        shuffle=False,
+        num_workers=int(num_workers),
+        pin_memory=False,
+    )
+    features: Optional[np.ndarray] = None
+    labels = np.empty(len(dataset), dtype=np.int64)
+    offset = 0
+    model.eval()
+    for images, batch_labels in loader:
+        images = images.to(device)
+        encoded = model.encode_image(images).float()
+        encoded /= encoded.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+        batch_features = encoded.cpu().numpy().astype(np.float32, copy=False)
+        if features is None:
+            features = np.empty(
+                (len(dataset), int(batch_features.shape[1])),
+                dtype=np.float64,
+                order="C",
+            )
+        end = offset + int(batch_features.shape[0])
+        features[offset:end] = batch_features
+        labels[offset:end] = batch_labels.numpy()
+        offset = end
+    if features is None or offset != len(dataset):
+        raise RuntimeError(
+            f"Feature extraction produced {offset} rows for a {len(dataset)}-sample dataset"
+        )
+    if not np.isfinite(features).all():
+        np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0, copy=False)
+    return features, labels
 
 
 def build_text_features(clip_module, model: nn.Module, device: torch.device) -> np.ndarray:
@@ -111,6 +155,7 @@ def build_probability_model(
     split_seed: int,
     device: torch.device,
 ):
+    print(f"[STAGE] Loading OpenAI CLIP model={clip_model_name}", flush=True)
     clip_module = _try_import_clip()
     try:
         model, preprocess = clip_module.load(clip_model_name, device=str(device), jit=False)
@@ -133,18 +178,27 @@ def build_probability_model(
     from sklearn.linear_model import LogisticRegression
 
     full_train = ImageFolder(str(png_root / "train"), transform=preprocess)
-    train_features, train_labels = _extract_features(
-        full_train,
-        model,
-        str(device),
-        int(feature_batch_size),
-        int(num_workers),
-        int(split_seed),
-    )
-    train_features = np.ascontiguousarray(l2_normalize(train_features), dtype=np.float64)
     permutation = np.random.default_rng(int(split_seed)).permutation(len(full_train))
     validation_count = int(0.10 * len(full_train))
     train_indices = permutation[validation_count:]
+    train_subset = Subset(full_train, train_indices.tolist())
+    print(
+        f"[STAGE] Extracting CLIP features samples={len(train_subset)} "
+        f"batch_size={feature_batch_size} workers={num_workers} dtype=float64",
+        flush=True,
+    )
+    train_features, train_labels = extract_clip_features(
+        train_subset,
+        model,
+        device,
+        int(feature_batch_size),
+        int(num_workers),
+    )
+    print(
+        f"[STAGE] Fitting CLIP-LR shape={train_features.shape} "
+        f"matrix_gib={train_features.nbytes / (1024 ** 3):.3f}",
+        flush=True,
+    )
     classifier = LogisticRegression(
         random_state=0,
         C=float(clip_c),
@@ -159,10 +213,11 @@ def build_probability_model(
         from threadpoolctl import threadpool_limits
 
         with threadpool_limits(limits=1):
-            classifier.fit(train_features[train_indices], train_labels[train_indices])
+            classifier.fit(train_features, train_labels)
     except Exception:
-        classifier.fit(train_features[train_indices], train_labels[train_indices])
-    details["clip_train_samples"] = int(train_indices.size)
+        classifier.fit(train_features, train_labels)
+    print("[STAGE] CLIP-LR fit complete", flush=True)
+    details["clip_train_samples"] = int(train_features.shape[0])
     return CLIPLinear(model, classifier.coef_, classifier.intercept_), preprocess, details
 
 
@@ -211,14 +266,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--clip-model", default="RN50")
     parser.add_argument("--clip-c", type=float, default=0.2515000498909345)
-    parser.add_argument("--clip-feature-batch-size", type=int, default=256)
+    parser.add_argument("--clip-feature-batch-size", type=int, default=128)
     parser.add_argument("--split", choices=("test",), default="test")
     parser.add_argument("--target-mode", choices=("label", "prediction"), default="label")
     parser.add_argument("--mask-threshold", type=int, default=0)
     parser.add_argument("--split-seed", type=int, default=0)
     parser.add_argument("--image-batch-size", type=int, default=8)
     parser.add_argument("--max-masked-batch", type=int, default=256)
-    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--max-samples", type=int, default=0)
     parser.add_argument("--sample-seed", type=int, default=0)
     parser.add_argument("--rise-num-masks", type=int, default=2000)
@@ -279,7 +334,7 @@ def main() -> None:
         batch_size=int(args.image_batch_size),
         shuffle=False,
         num_workers=int(args.num_workers),
-        pin_memory=(device.type == "cuda"),
+        pin_memory=False,
     )
 
     masks_np, mask_hash = load_or_create_mask_bank(
@@ -301,6 +356,7 @@ def main() -> None:
     zero_maps = 0
     rows: List[Dict[str, object]] = []
 
+    print(f"[STAGE] Starting RISE evaluation", flush=True)
     print(f"[INFO] method={args.method} samples={len(dataset)} device={device} clip={clip_details}")
     print(f"[INFO] RISE 28x28 bank={mask_bank_path} sha256={mask_hash}")
     for images, labels, digit_masks, paths, source_indices in loader:

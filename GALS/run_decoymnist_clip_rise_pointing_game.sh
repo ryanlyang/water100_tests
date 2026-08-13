@@ -7,7 +7,7 @@
 #SBATCH --time=0-06:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
+#SBATCH --mem=32G
 #SBATCH --output=/home/ryreu/guided_cnn/logsMNIST/%x_%j.out
 #SBATCH --error=/home/ryreu/guided_cnn/logsMNIST/%x_%j.err
 
@@ -25,7 +25,8 @@ PNG_ROOT="${PNG_ROOT:-/home/ryreu/guided_cnn/MNIST_AGAIN/MakeMNIST/data/DecoyMNI
 MNIST_ROOT="${MNIST_ROOT:-/home/ryreu/guided_cnn/MNIST_AGAIN/MakeMNIST/data}"
 CLIP_MODEL="${CLIP_MODEL:-RN50}"
 CLIP_C="${CLIP_C:-0.2515000498909345}"
-NUM_WORKERS="${NUM_WORKERS:-${SLURM_CPUS_PER_TASK:-4}}"
+NUM_WORKERS="${NUM_WORKERS:-0}"
+CLIP_FEATURE_BATCH_SIZE="${CLIP_FEATURE_BATCH_SIZE:-128}"
 RISE_NUM_MASKS="${RISE_NUM_MASKS:-2000}"
 RISE_GRID_SIZE="${RISE_GRID_SIZE:-8}"
 RISE_P1="${RISE_P1:-0.1}"
@@ -49,6 +50,7 @@ python -u decoymnist_clip_rise_pointing_game_eval.py \
   --seed 0 \
   --clip-model "$CLIP_MODEL" \
   --clip-c "$CLIP_C" \
+  --clip-feature-batch-size "$CLIP_FEATURE_BATCH_SIZE" \
   --num-workers "$NUM_WORKERS" \
   --rise-num-masks "$RISE_NUM_MASKS" \
   --rise-grid-size "$RISE_GRID_SIZE" \
