@@ -70,12 +70,12 @@ def _infer_patch_size_from_name(name: str, default: int = 16) -> int:
 def _parse_model_name_from_checkpoint(path: str) -> str:
     filename = os.path.basename(path)
     if "ViT-B-16" in filename or "ViT-B_16" in filename:
-        return "ViT-B-16-quickgelu"
+        return "ViT-B-16"
     if "ViT-B-32" in filename or "ViT-B_32" in filename:
-        return "ViT-B-32-quickgelu"
+        return "ViT-B-32"
     if "ViT-L-14" in filename or "ViT-L_14" in filename:
-        return "ViT-L-14-quickgelu"
-    return "ViT-B-16-quickgelu"
+        return "ViT-L-14"
+    return "ViT-B-16"
 
 
 def _safe_list_pretrained() -> List[Tuple[str, str]]:
@@ -205,10 +205,10 @@ def _resolve_openclip_model_request(
         pretrained_override = os.environ.get("SIGLIP2_PRETRAINED", pretrained_override)
 
     model_mapping = {
-        "ViT-B/32": "ViT-B-32-quickgelu",
-        "ViT-B/16": "ViT-B-16-quickgelu",
-        "ViT-L/14": "ViT-L-14-quickgelu",
-        "ViT-L/14@336px": "ViT-L-14-quickgelu",
+        "ViT-B/32": "ViT-B-32",
+        "ViT-B/16": "ViT-B-16",
+        "ViT-L/14": "ViT-L-14",
+        "ViT-L/14@336px": "ViT-L-14-336",
         "RN50": "RN50",
         "RN101": "RN101",
         "RN50x4": "RN50x4",
@@ -259,7 +259,7 @@ def _resolve_openclip_model_request(
             model_name = model_mapping.get(requested_name, requested_name.replace("/", "-"))
 
     if not model_name:
-        model_name = "ViT-B-16-quickgelu"
+        model_name = "ViT-B-16"
 
     if pretrained_override:
         pretrained_name = pretrained_override

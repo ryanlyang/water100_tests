@@ -219,7 +219,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     os.environ["CLIP_TEXT_DATASET"] = "imagenet9"
     os.environ.pop("CLIP_TEXT_VERSION", None)
     os.environ["CLIP_BACKEND"] = "openclip"
-    os.environ["CLIP_MODEL_NAME"] = "ViT-B-16-quickgelu"
+    os.environ["CLIP_MODEL_NAME"] = "ViT-B-16"
     os.environ["CLIP_PRETRAINED"] = "openai"
     os.environ["WECLIP_RUN_SEED"] = str(args.seed)
     os.environ["WECLIP_NUM_WORKERS"] = str(args.num_workers)
