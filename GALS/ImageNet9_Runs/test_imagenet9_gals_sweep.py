@@ -8,12 +8,17 @@ import unittest
 import torch
 
 import sweep_imagenet9_baseline as sweep
-from train_imagenet9_baseline import combine_gals_attention
+from train_imagenet9_baseline import combine_gals_attention, ground_truth_gradcam
 
 
 class FakeTrial:
     def suggest_float(self, name, low, high, log=False):
-        return {"base_lr": 1e-3, "classifier_lr": 2e-3, "grad_weight": 3e3}[name]
+        return {
+            "base_lr": 1e-3,
+            "classifier_lr": 2e-4,
+            "grad_weight": 3e3,
+            "cam_weight": 2.5,
+        }[name]
 
     def suggest_categorical(self, name, choices):
         self.categorical = (name, tuple(choices))
@@ -44,6 +49,29 @@ class ImageNet9GALSTests(unittest.TestCase):
         self.assertEqual(params["grad_criterion"], "L2")
         self.assertEqual(trial.categorical, ("grad_criterion", ("L1", "L2")))
         self.assertEqual(params["momentum"], 0.9)
+
+    def test_gradcam_search_uses_established_three_ranges(self):
+        params = sweep._suggest(FakeTrial(), "gals_gradcam", fixed_momentum=0.9)
+        self.assertEqual(params["base_lr"], 1e-3)
+        self.assertEqual(params["classifier_lr"], 2e-4)
+        self.assertEqual(params["cam_weight"], 2.5)
+        self.assertNotIn("grad_weight", sweep.SEARCH_SPACES["gals_gradcam"])
+
+    def test_ground_truth_gradcam_is_normalized_and_differentiable(self):
+        torch.manual_seed(0)
+        features = torch.randn(2, 4, 3, 3, requires_grad=True)
+        classifier = torch.nn.Linear(4, 3)
+        logits = classifier(features.mean(dim=(2, 3)))
+        targets = torch.tensor([0, 2])
+
+        gradcam = ground_truth_gradcam(features, logits, targets)
+        self.assertEqual(tuple(gradcam.shape), (2, 1, 3, 3))
+        self.assertGreaterEqual(float(gradcam.min()), 0.0)
+        self.assertLessEqual(float(gradcam.max()), 1.0 + 1e-6)
+
+        gradcam.mean().backward()
+        self.assertIsNotNone(features.grad)
+        self.assertIsNotNone(classifier.weight.grad)
 
 
 if __name__ == "__main__":

@@ -41,6 +41,7 @@ class ImageNet9SweepContractTests(unittest.TestCase):
             {"erm", "upweight", "abn", "elrep"},
         )
         self.assertIn("gals", sweep.METHODS)
+        self.assertIn("gals_gradcam", sweep.METHODS)
 
     def test_contract_excludes_official_variants(self):
         contract = sweep._contract(_args())

@@ -34,7 +34,7 @@ from imagenet9_data import (
 )
 
 
-METHODS = ("erm", "upweight", "abn", "elrep", "gals")
+METHODS = ("erm", "upweight", "abn", "elrep", "gals", "gals_gradcam")
 
 
 class ImageNet9GALSDataset(Dataset):
@@ -96,6 +96,29 @@ def combine_gals_attention(attention: torch.Tensor) -> Tuple[torch.Tensor, torch
     maximum = flat.max(dim=1, keepdim=True).values
     normalized = (flat - minimum) / maximum.clamp_min(1e-12)
     return normalized.view_as(combined), valid_samples
+
+
+def ground_truth_gradcam(
+    feature_maps: torch.Tensor,
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+) -> torch.Tensor:
+    """Differentiable Grad-CAM used by the existing GALS Grad-CAM baseline."""
+    one_hot = torch.zeros_like(logits)
+    one_hot.scatter_(1, targets.view(-1, 1), 1.0)
+    gradients = torch.autograd.grad(
+        logits,
+        feature_maps,
+        grad_outputs=one_hot,
+        retain_graph=True,
+        create_graph=True,
+    )[0]
+    weights = F.adaptive_avg_pool2d(gradients, 1)
+    gradcam = F.relu((feature_maps * weights).sum(dim=1, keepdim=True))
+    flat = gradcam.flatten(1)
+    maximum = flat.max(dim=1, keepdim=True).values.clamp_min(1e-12)
+    minimum = flat.min(dim=1, keepdim=True).values
+    return ((flat - minimum) / maximum).view_as(gradcam)
 
 
 @dataclass
@@ -215,7 +238,11 @@ def split_parameter_groups(
     ]
 
 
-def forward_resnet_features(model: nn.Module, images: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+def forward_resnet_features(
+    model: nn.Module,
+    images: torch.Tensor,
+    return_feature_map: bool = False,
+) -> Tuple[torch.Tensor, torch.Tensor]:
     features = model.conv1(images)
     features = model.bn1(features)
     features = model.relu(features)
@@ -225,7 +252,7 @@ def forward_resnet_features(model: nn.Module, images: torch.Tensor) -> Tuple[tor
     features = model.layer3(features)
     features = model.layer4(features)
     pooled = torch.flatten(model.avgpool(features), 1)
-    return model.fc(pooled), pooled
+    return model.fc(pooled), features if return_feature_map else pooled
 
 
 def elrep_penalty(features: torch.Tensor, theta1: float, theta2: float) -> torch.Tensor:
@@ -247,6 +274,11 @@ def _forward(
     if method == "elrep":
         logits, features = forward_resnet_features(model, images)
         return logits, None, features
+    if method == "gals_gradcam":
+        logits, feature_maps = forward_resnet_features(
+            model, images, return_feature_map=True
+        )
+        return logits, None, feature_maps
     return model(images), None, None
 
 
@@ -286,7 +318,7 @@ def build_loaders(
         "pin_memory": torch.cuda.is_available(),
         "drop_last": False,
     }
-    if method == "gals":
+    if method in {"gals", "gals_gradcam"}:
         if gals_map_root is None:
             raise ValueError("GALS requires --gals-map-root")
         train_dataset = ImageNet9GALSDataset(
@@ -357,6 +389,7 @@ def _save_checkpoint(
                 "theta2": args.theta2,
                 "grad_weight": args.grad_weight,
                 "grad_criterion": args.grad_criterion,
+                "cam_weight": args.cam_weight,
                 "gals_map_root": str(args.gals_map_root) if args.gals_map_root else "",
                 "epochs": args.epochs,
                 "seed": args.seed,
@@ -427,6 +460,13 @@ def train(args: argparse.Namespace) -> TrainResult:
             "mode=suppress_outside",
             flush=True,
         )
+    elif args.method == "gals_gradcam":
+        print(
+            f"[GALS-GRADCAM] map_root={args.gals_map_root} "
+            f"cam_weight={args.cam_weight:.9g} criterion=L1 mode=match "
+            "combine=average_nonzero target_layer=layer4",
+            flush=True,
+        )
     print(
         f"[HPARAMS] base_lr={args.base_lr:.9g} classifier_lr={args.classifier_lr:.9g} "
         f"momentum={args.momentum:.6g} weight_decay={args.weight_decay:.9g} "
@@ -478,6 +518,26 @@ def train(args: argparse.Namespace) -> TrainResult:
                 else:
                     raise ValueError(f"Unknown gradient criterion: {args.grad_criterion}")
                 loss = loss + args.grad_weight * gradient_loss
+            elif args.method == "gals_gradcam":
+                if features is None:
+                    raise RuntimeError("GALS Grad-CAM did not return layer4 feature maps")
+                teacher, valid = combine_gals_attention(
+                    batch["attention"].to(device, non_blocking=True)
+                )
+                if not bool(valid.all()):
+                    invalid = int((~valid).sum().item())
+                    raise RuntimeError(
+                        f"GALS Grad-CAM batch contains {invalid} all-zero teacher maps"
+                    )
+                gradcam = ground_truth_gradcam(features, logits, targets)
+                teacher = F.interpolate(
+                    teacher,
+                    size=gradcam.shape[-2:],
+                    mode="bilinear",
+                    align_corners=False,
+                )
+                cam_loss = F.l1_loss(gradcam, teacher)
+                loss = loss + args.cam_weight * cam_loss
             loss.backward()
             optimizer.step()
             train_loss_sum += float(loss.detach().item()) * images.shape[0]
@@ -568,6 +628,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--gals-map-root", type=Path)
     parser.add_argument("--grad-weight", type=float, default=1e4)
     parser.add_argument("--grad-criterion", choices=("L1", "L2"), default="L1")
+    parser.add_argument("--cam-weight", type=float, default=1.0)
     parser.add_argument("--pretrained", action="store_true", default=True)
     parser.add_argument("--no-pretrained", action="store_false", dest="pretrained")
     parser.add_argument("--abn-checkpoint", type=Path)

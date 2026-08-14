@@ -174,6 +174,22 @@ to continue the stable `imagenet9_gals_main` SQLite study until 50 trials have
 completed; validation and official Backgrounds Challenge variants are never
 used as teacher-map inputs or robustness-selection targets.
 
+The corresponding GALS Grad-CAM comparison uses the same map set, student,
+training length, validation objective, persistence behavior, and three-day
+walltime:
+
+```bash
+sbatch ImageNet9_Runs/run_imagenet9_gals_gradcam_sweep.sbatch
+```
+
+This separate 50-completed-trial study matches the exhaustive GALS comparison:
+it sweeps `base_lr` over `[5e-4,5e-2]`, `classifier_lr` over `[1e-5,1e-3]`,
+and `cam_weight` over `[1e-2,1e2]` (all log-scaled). It fixes the student map
+to ground-truth-class Grad-CAM from ResNet-50 `layer4`, aggregates teacher
+prompts with `average_nonzero`, and uses L1 map matching. Its stable state is
+stored under `logsImageNet9/sweeps/gals_gradcam/main/`; re-submit the same
+command after interruption to continue to 50 completed trials.
+
 ## R4RR VOC compatibility workspace
 
 R4RR map generation uses the existing WeCLIP+ CLIP+DINO+CRF pipeline. Prepare

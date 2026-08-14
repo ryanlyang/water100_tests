@@ -17,7 +17,7 @@ from typing import Dict, List, Mapping, Optional, Sequence
 
 
 NON_TEACHER_METHODS = ("erm", "upweight", "abn", "elrep")
-METHODS = NON_TEACHER_METHODS + ("gals",)
+METHODS = NON_TEACHER_METHODS + ("gals", "gals_gradcam")
 OBJECTIVE_NAME = "val_macro_class_accuracy"
 RESULT_PREFIX = "[RESULT] "
 
@@ -48,6 +48,11 @@ SEARCH_SPACES: Mapping[str, Mapping[str, object]] = {
         "classifier_lr": (1e-5, 5e-2, "log"),
         "grad_weight": (1e3, 1e5, "log"),
         "grad_criterion": ("L1", "L2", "categorical"),
+    },
+    "gals_gradcam": {
+        "base_lr": (5e-4, 5e-2, "log"),
+        "classifier_lr": (1e-5, 1e-3, "log"),
+        "cam_weight": (1e-2, 1e2, "log"),
     },
 }
 
@@ -104,7 +109,7 @@ def _contract(args: argparse.Namespace) -> Dict[str, object]:
         "objective": OBJECTIVE_NAME,
         "official_variants_used": False,
     }
-    if args.method == "gals":
+    if args.method in {"gals", "gals_gradcam"}:
         contract["gals_maps"] = _validate_gals_maps(args)
     return contract
 
@@ -163,6 +168,7 @@ def _suggest(trial, method: str, fixed_momentum: float) -> Dict[str, object]:
     params.setdefault("theta2", 1e-5)
     params.setdefault("grad_weight", 1e4)
     params.setdefault("grad_criterion", "L1")
+    params.setdefault("cam_weight", 1.0)
     return params
 
 
@@ -182,6 +188,11 @@ def _default_trial(method: str) -> Dict[str, object]:
             "classifier_lr": 1e-4,
             "grad_weight": 1e4,
             "grad_criterion": "L1",
+        },
+        "gals_gradcam": {
+            "base_lr": 5e-3,
+            "classifier_lr": 1e-4,
+            "cam_weight": 1.0,
         },
     }
     return defaults[method]
@@ -212,16 +223,19 @@ def _trainer_command(args: argparse.Namespace, params: Mapping[str, object]) -> 
         if args.abn_checkpoint is None:
             raise ValueError("ABN sweep requires --abn-checkpoint")
         command.extend(["--abn-checkpoint", str(args.abn_checkpoint)])
-    elif args.method == "gals":
+    elif args.method in {"gals", "gals_gradcam"}:
         if args.gals_map_root is None:
             raise ValueError("GALS sweep requires --gals-map-root")
-        command.extend(
-            [
-                "--gals-map-root", str(args.gals_map_root),
-                "--grad-weight", str(params["grad_weight"]),
-                "--grad-criterion", str(params["grad_criterion"]),
-            ]
-        )
+        command.extend(["--gals-map-root", str(args.gals_map_root)])
+        if args.method == "gals":
+            command.extend(
+                [
+                    "--grad-weight", str(params["grad_weight"]),
+                    "--grad-criterion", str(params["grad_criterion"]),
+                ]
+            )
+        else:
+            command.extend(["--cam-weight", str(params["cam_weight"])])
     return command
 
 
@@ -282,7 +296,7 @@ def _write_study_csv(study, path: Path) -> None:
 
     fieldnames = [
         "trial", "state", "objective", "base_lr", "classifier_lr", "momentum",
-        "abn_cls_weight", "theta1", "theta2", "grad_weight", "grad_criterion",
+        "abn_cls_weight", "theta1", "theta2", "grad_weight", "grad_criterion", "cam_weight",
         "best_epoch", "best_val_accuracy",
         "best_val_per_class_accuracy", "class_weights", "seconds", "log_path",
     ]
@@ -301,6 +315,7 @@ def _write_study_csv(study, path: Path) -> None:
                 "theta2": trial.params.get("theta2", ""),
                 "grad_weight": trial.params.get("grad_weight", ""),
                 "grad_criterion": trial.params.get("grad_criterion", ""),
+                "cam_weight": trial.params.get("cam_weight", ""),
                 "best_epoch": trial.user_attrs.get("best_epoch", ""),
                 "best_val_accuracy": trial.user_attrs.get("best_val_accuracy", ""),
                 "best_val_per_class_accuracy": json.dumps(trial.user_attrs.get("best_val_per_class_accuracy", [])),
