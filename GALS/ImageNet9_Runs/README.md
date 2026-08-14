@@ -321,3 +321,36 @@ a final model checkpoint under
 `r4rr_teacher/weclipplus_clip_dino_v1/training/full/`. Re-submit the same full
 command after interruption to continue from the saved model, optimizer,
 iteration, and RNG state. Smoke and full states are isolated from one another.
+
+After full training completes, export maps for all 45,405 Original training
+images. First run a five-image inference smoke test against the full checkpoint:
+
+```bash
+sbatch --partition=debug --time=04:00:00 --array=0 \
+  --export=ALL,CHUNK_SIZE=5,OUTPUT_ROOT=/home/ryreu/guided_cnn/data/imagenet9/r4rr_teacher/weclipplus_clip_dino_v1/inference/smoke/val \
+  ImageNet9_Runs/run_imagenet9_r4rr_weclip_maps.sbatch
+```
+
+After confirming that its final record reaches `[MAP] 5/5` with no traceback,
+export and automatically audit the complete set:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+bash ImageNet9_Runs/submit_imagenet9_r4rr_weclip_maps.sh
+```
+
+The first job is a resumable 46-task array with 1,000 manifest-ordered images
+per task (405 in the final task). Each task loads the fixed 29,000-iteration
+checkpoint and preserves the established WeCLIP+ inference protocol: scales
+1.0 and 1.5, horizontal-flip averaging, equal CLIP/DINO logits, and DenseCRF.
+Maps are written as RGB VOC-colormap PNGs under
+`r4rr_teacher/weclipplus_clip_dino_v1/inference/full/val/prediction_cmap/`.
+Existing readable maps with the correct source dimensions are reused after an
+interruption.
+
+The dependent CPU audit runs only after every array task succeeds. It requires
+exactly one map per training `sample_id`, rejects missing, extra, malformed,
+wrong-sized, and unknown-color maps, and confirms that no validation or
+official test data entered the inference contract. It also reports expected
+foreground, background, unexpected-class, and empty-map rates globally and by
+class under `inference/full/audit/`.
