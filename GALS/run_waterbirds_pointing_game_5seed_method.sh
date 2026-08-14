@@ -36,6 +36,7 @@ TARGET_MODE="${TARGET_MODE:-label}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 SAMPLE_SEED="${SAMPLE_SEED:-0}"
 EXISTING_CHECKPOINT_CSV="${EXISTING_CHECKPOINT_CSV:-}"
+TRAIN_ONLY="${TRAIN_ONLY:-0}"
 AFR_ROOT="${AFR_ROOT:-$PROJECT_ROOT/afr}"
 MASK_PROTOCOL="${MASK_PROTOCOL:-legacy}"
 case "$MASK_PROTOCOL" in
@@ -97,6 +98,7 @@ echo "[RUN] data=$DATA_PATH"
 echo "[RUN] masks=$MASK_ROOT protocol=$MASK_PROTOCOL split=$SPLIT target_mode=$TARGET_MODE"
 echo "[RUN] output=$METHOD_DIR"
 echo "[RUN] existing_checkpoint_csv=${EXISTING_CHECKPOINT_CSV:-NONE}"
+echo "[RUN] train_only=$TRAIN_ONLY"
 which python
 
 manifest_is_valid() {
@@ -198,6 +200,11 @@ for seed_raw in "${SEEDS[@]}"; do
       2>&1 | tee "$SEED_DIR/training.log"
   fi
 
+  if [[ "$TRAIN_ONLY" == "1" ]]; then
+    echo "[TRAIN-ONLY] seed=$seed manifest ready; skipping CAM Pointing Game."
+    continue
+  fi
+
   if pointing_summary_is_valid "$PG_SUMMARY"; then
     echo "[RESUME] seed=$seed Pointing Game summary exists; skipping evaluation."
     continue
@@ -252,6 +259,11 @@ PY
   python -u waterbirds_pointing_game_eval.py "${PG_ARGS[@]}" \
     2>&1 | tee "$SEED_DIR/pointing_game.log"
 done
+
+if [[ "$TRAIN_ONLY" == "1" ]]; then
+  echo "[DONE] Training manifests are ready for requested seeds: $SEEDS_CSV"
+  exit 0
+fi
 
 python -u summarize_waterbirds_pointing_game_5seed.py \
   --method-dir "$METHOD_DIR" \
