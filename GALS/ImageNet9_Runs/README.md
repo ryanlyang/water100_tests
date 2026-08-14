@@ -204,6 +204,38 @@ study sweeps `base_lr` over `[1e-3,1e-1]`, `classifier_lr` over
 a three-day walltime and Original validation macro-class selection. Its stable
 state is stored under `logsImageNet9/sweeps/gals_abn/main/`.
 
+The final exhaustive GALS variant replaces the ViT teacher maps with OpenAI
+CLIP RN50 Grad-CAM maps while retaining the RRR input-gradient objective. Run a
+180-image diagnostic first:
+
+```bash
+sbatch ImageNet9_Runs/run_imagenet9_gals_rn50_maps.sbatch
+```
+
+After inspecting the per-class QA sheets, generate all 45,405 maps with a
+resumable 46-task array:
+
+```bash
+sbatch --partition=tier3 --time=3-00:00:00 --array=0-45 \
+  --export=ALL,MODE=full,CHUNK_SIZE=1000 \
+  ImageNet9_Runs/run_imagenet9_gals_rn50_maps.sbatch
+```
+
+The maps use two class-conditioned prompts, OpenAI CLIP RN50, and Grad-CAM at
+`layer4.2.relu`. They are stored under
+`data/imagenet9/gals_maps/clip_rn50_gradcam_v1/` with a contract distinct from
+the ViT maps. After the full map audit passes, launch the separate 50-trial RRR
+sweep:
+
+```bash
+sbatch ImageNet9_Runs/run_imagenet9_gals_rn50_sweep.sbatch
+```
+
+This study uses the same RRR search space and fixed training setup as the ViT
+map variant, but persists independently under
+`logsImageNet9/sweeps/gals_rn50/main/`. Its walltime is three days and the same
+submission command resumes it to 50 completed trials.
+
 ## R4RR VOC compatibility workspace
 
 R4RR map generation uses the existing WeCLIP+ CLIP+DINO+CRF pipeline. Prepare

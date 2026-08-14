@@ -4,10 +4,14 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from argparse import Namespace
+from pathlib import Path
 
 import torch
 
 import sweep_imagenet9_baseline as sweep
+import generate_imagenet9_gals_vit_maps as map_generator
 from train_imagenet9_baseline import combine_gals_attention, ground_truth_gradcam
 
 
@@ -27,6 +31,37 @@ class FakeTrial:
 
 
 class ImageNet9GALSTests(unittest.TestCase):
+    def test_vit_contract_stays_compatible_and_rn50_is_distinct(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            manifest = Path(temporary) / "manifest.csv"
+            manifest.write_text("sample_id\nexample\n")
+            common = {
+                "manifest": manifest,
+                "target_layer": "layer4.2.relu",
+            }
+            vit = map_generator._contract(
+                Namespace(
+                    **common,
+                    map_type="transformer",
+                    clip_checkpoint="ViT-B/32",
+                )
+            )
+            rn50 = map_generator._contract(
+                Namespace(
+                    **common,
+                    map_type="rn50_gradcam",
+                    clip_checkpoint="RN50",
+                )
+            )
+
+        self.assertEqual(vit["model"], "ViT-B/32")
+        self.assertEqual(vit["method"], "clip_transformer_relevance")
+        self.assertNotIn("target_layer", vit)
+        self.assertEqual(rn50["model"], "RN50")
+        self.assertEqual(rn50["method"], "clip_gradcam")
+        self.assertEqual(rn50["target_layer"], "layer4.2.relu")
+        self.assertEqual(rn50["expected_map_shape"], [2, 1, 7, 7])
+
     def test_average_nonzero_ignores_zero_prompt_and_normalizes(self):
         attention = torch.zeros(2, 2, 1, 2, 2)
         attention[0, 0, 0] = torch.tensor([[1.0, 2.0], [3.0, 4.0]])

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate manifest-keyed CLIP ViT transformer relevance maps for IN-9 GALS."""
+"""Generate manifest-keyed CLIP ViT or RN50 maps for ImageNet-9 GALS."""
 
 from __future__ import annotations
 
@@ -25,6 +25,9 @@ from imagenet9_data import CLASS_NAMES, ImageNet9Sample, load_original_samples
 
 MODEL_NAME = "ViT-B/32"
 MAP_METHOD = "clip_transformer_relevance"
+RN50_MODEL_NAME = "RN50"
+RN50_MAP_METHOD = "clip_gradcam"
+RN50_TARGET_LAYER = "layer4.2.relu"
 MAP_SCHEMA_VERSION = 1
 PIL_BICUBIC = getattr(Image, "Resampling", Image).BICUBIC
 PROMPT_CONCEPTS: Mapping[str, str] = {
@@ -51,6 +54,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--end-index", type=int, default=-1)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--clip-checkpoint", default=MODEL_NAME)
+    parser.add_argument(
+        "--map-type",
+        choices=("transformer", "rn50_gradcam"),
+        default="transformer",
+    )
+    parser.add_argument("--target-layer", default=RN50_TARGET_LAYER)
     parser.add_argument("--skip-existing", action="store_true", default=True)
     parser.add_argument("--no-skip-existing", action="store_false", dest="skip_existing")
     parser.add_argument("--write-qa", action="store_true")
@@ -72,7 +81,7 @@ def prompts_for_class(class_name: str) -> List[str]:
 
 
 def _contract(args: argparse.Namespace) -> Dict[str, object]:
-    return {
+    contract = {
         "schema_version": MAP_SCHEMA_VERSION,
         "dataset": "imagenet9_backgrounds_challenge",
         "source_split": "reconstructed_original_train",
@@ -91,6 +100,11 @@ def _contract(args: argparse.Namespace) -> Dict[str, object]:
         "background_specific_prompts": False,
         "official_variants_generated": False,
     }
+    if args.map_type == "rn50_gradcam":
+        contract["model"] = RN50_MODEL_NAME
+        contract["method"] = RN50_MAP_METHOD
+        contract["target_layer"] = args.target_layer
+    return contract
 
 
 def _ensure_contract(path: Path, contract: Mapping[str, object]) -> None:
@@ -242,7 +256,8 @@ def _qa_triptych(
     draw = ImageDraw.Draw(canvas)
     font = ImageFont.load_default()
     draw.text((4, 7), f"{sample.class_name}: {sample.sample_id}", fill="black", font=font)
-    draw.text((228, 7), "CLIP ViT map", fill="black", font=font)
+    model_name = str(payload.get("model_name", MODEL_NAME))
+    draw.text((228, 7), f"CLIP {model_name} map", fill="black", font=font)
     draw.text((452, 7), "overlay", fill="black", font=font)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(output_path, quality=88, optimize=True)
@@ -318,14 +333,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     samples = select_samples(args)
 
     from CLIP.clip import clip
-    from utils.attention_utils import transformer_attention
+    from utils.attention_utils import clip_gcam, transformer_attention
+
+    map_method = MAP_METHOD if args.map_type == "transformer" else RN50_MAP_METHOD
+    model_name = MODEL_NAME if args.map_type == "transformer" else RN50_MODEL_NAME
+    if args.map_type == "rn50_gradcam" and args.clip_checkpoint != RN50_MODEL_NAME:
+        raise ValueError(
+            f"RN50 Grad-CAM requires --clip-checkpoint {RN50_MODEL_NAME}, "
+            f"got {args.clip_checkpoint}"
+        )
 
     print(
         f"[MAPS] selection={args.selection} shard={args.start_index}:{args.end_index} "
         f"samples={len(samples)} output={args.output_root}",
         flush=True,
     )
-    print(f"[MAPS] model={args.clip_checkpoint} method={MAP_METHOD}", flush=True)
+    print(
+        f"[MAPS] model={args.clip_checkpoint} method={map_method} "
+        f"target_layer={args.target_layer if args.map_type == 'rn50_gradcam' else 'NONE'}",
+        flush=True,
+    )
     model, preprocess = clip.load(args.clip_checkpoint, device=args.device, jit=False)
     model.eval()
     preprocess_no_crop = []
@@ -352,25 +379,41 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             payload = torch.load(destination, map_location="cpu")
             reused = True
         else:
-            payload = transformer_attention(
-                model,
-                preprocess,
-                str(sample.path),
-                text_list=prompts,
-                tokenized_text=tokens[sample.class_name],
-                device=args.device,
-                plot_vis=False,
-                resize=False,
-            )
+            if args.map_type == "transformer":
+                payload = transformer_attention(
+                    model,
+                    preprocess,
+                    str(sample.path),
+                    text_list=prompts,
+                    tokenized_text=tokens[sample.class_name],
+                    device=args.device,
+                    plot_vis=False,
+                    resize=False,
+                )
+            else:
+                payload = clip_gcam(
+                    model,
+                    preprocess,
+                    str(sample.path),
+                    text_list=prompts,
+                    tokenized_text=tokens[sample.class_name],
+                    layer=args.target_layer,
+                    device=args.device,
+                    plot_vis=False,
+                    resize=False,
+                )
             payload.update(
                 {
                     "sample_id": sample.sample_id,
                     "label": sample.label,
                     "class_name": sample.class_name,
                     "source_path": str(sample.path),
-                    "model_name": MODEL_NAME,
-                    "map_method": MAP_METHOD,
+                    "model_name": model_name,
+                    "map_method": map_method,
                     "map_schema_version": MAP_SCHEMA_VERSION,
+                    "target_layer": (
+                        args.target_layer if args.map_type == "rn50_gradcam" else ""
+                    ),
                 }
             )
             destination.parent.mkdir(parents=True, exist_ok=True)
