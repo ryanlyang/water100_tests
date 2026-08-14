@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train one non-teacher ImageNet-9 baseline on Original train/validation data."""
+"""Train one ImageNet-9 baseline on Original train/validation data."""
 
 from __future__ import annotations
 
@@ -17,8 +17,9 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.optim import SGD
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torchvision import models
 
 from imagenet9_data import (
@@ -33,7 +34,68 @@ from imagenet9_data import (
 )
 
 
-METHODS = ("erm", "upweight", "abn", "elrep")
+METHODS = ("erm", "upweight", "abn", "elrep", "gals")
+
+
+class ImageNet9GALSDataset(Dataset):
+    """Original ImageNet-9 images joined to manifest-keyed CLIP ViT maps."""
+
+    def __init__(self, samples, transform, map_root: Path, image_size: int) -> None:
+        self.samples = list(samples)
+        self.transform = transform
+        self.map_root = map_root
+        self.image_size = image_size
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int) -> Mapping[str, object]:
+        from PIL import Image
+
+        sample = self.samples[index]
+        with Image.open(sample.path) as image_file:
+            image = image_file.convert("RGB")
+        image = self.transform(image)
+
+        map_path = self.map_root / "maps" / sample.class_name / f"{sample.sample_id}.pth"
+        if not map_path.is_file():
+            raise FileNotFoundError(f"Missing GALS map: {map_path}")
+        payload = torch.load(str(map_path), map_location="cpu")
+        attention = payload.get("unnormalized_attentions")
+        if not torch.is_tensor(attention) or tuple(attention.shape) != (2, 1, 7, 7):
+            shape = tuple(attention.shape) if torch.is_tensor(attention) else None
+            raise RuntimeError(f"Invalid GALS map {map_path}: shape={shape}")
+        if not bool(torch.isfinite(attention).all()):
+            raise RuntimeError(f"Non-finite GALS map: {map_path}")
+        attention = F.interpolate(
+            attention.float(),
+            size=(self.image_size, self.image_size),
+            mode="bilinear",
+            align_corners=False,
+        )
+        return {
+            "image": image,
+            "label": torch.tensor(sample.label, dtype=torch.long),
+            "attention": attention,
+            "sample_id": sample.sample_id,
+        }
+
+
+def combine_gals_attention(attention: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Match GALS average_nonzero prompt aggregation and per-map normalization."""
+    if attention.ndim != 5:
+        raise RuntimeError(f"Expected BxPx1xHxW attention, got {tuple(attention.shape)}")
+    prompt_nonzero = attention.flatten(2).ne(0).any(dim=2)
+    valid_samples = prompt_nonzero.any(dim=1)
+    weights = prompt_nonzero.to(attention.dtype).view(attention.shape[0], attention.shape[1], 1, 1, 1)
+    combined = (attention * weights).sum(dim=1)
+    denominator = weights.sum(dim=1).clamp_min(1.0)
+    combined = combined / denominator
+    flat = combined.flatten(1)
+    minimum = flat.min(dim=1, keepdim=True).values
+    maximum = flat.max(dim=1, keepdim=True).values
+    normalized = (flat - minimum) / maximum.clamp_min(1e-12)
+    return normalized.view_as(combined), valid_samples
 
 
 @dataclass
@@ -203,6 +265,8 @@ def build_loaders(
     seed: int,
     image_size: int = 224,
     verify_files: bool = True,
+    method: str = "erm",
+    gals_map_root: Optional[Path] = None,
 ) -> Tuple[DataLoader, DataLoader, Sequence[object], Sequence[object]]:
     train_samples = load_original_samples(manifest_path, "train", verify_files)
     val_samples = load_original_samples(manifest_path, "val", verify_files)
@@ -222,8 +286,19 @@ def build_loaders(
         "pin_memory": torch.cuda.is_available(),
         "drop_last": False,
     }
+    if method == "gals":
+        if gals_map_root is None:
+            raise ValueError("GALS requires --gals-map-root")
+        train_dataset = ImageNet9GALSDataset(
+            train_samples,
+            build_train_transform(image_size),
+            gals_map_root,
+            image_size,
+        )
+    else:
+        train_dataset = ImageNet9Dataset(train_samples, build_train_transform(image_size))
     train_loader = DataLoader(
-        ImageNet9Dataset(train_samples, build_train_transform(image_size)),
+        train_dataset,
         shuffle=True,
         generator=generator,
         **common,
@@ -280,6 +355,9 @@ def _save_checkpoint(
                 "abn_cls_weight": args.abn_cls_weight,
                 "theta1": args.theta1,
                 "theta2": args.theta2,
+                "grad_weight": args.grad_weight,
+                "grad_criterion": args.grad_criterion,
+                "gals_map_root": str(args.gals_map_root) if args.gals_map_root else "",
                 "epochs": args.epochs,
                 "seed": args.seed,
             },
@@ -308,6 +386,8 @@ def train(args: argparse.Namespace) -> TrainResult:
         args.seed,
         args.image_size,
         verify_files=not args.skip_file_checks,
+        method=args.method,
+        gals_map_root=args.gals_map_root,
     )
     class_weights = inverse_frequency_class_weights(train_samples)
     if args.method != "upweight":
@@ -340,6 +420,13 @@ def train(args: argparse.Namespace) -> TrainResult:
         f"train={len(train_samples)} val={len(val_samples)} device={device}",
         flush=True,
     )
+    if args.method == "gals":
+        print(
+            f"[GALS] map_root={args.gals_map_root} grad_weight={args.grad_weight:.9g} "
+            f"grad_criterion={args.grad_criterion} combine=average_nonzero "
+            "mode=suppress_outside",
+            flush=True,
+        )
     print(
         f"[HPARAMS] base_lr={args.base_lr:.9g} classifier_lr={args.classifier_lr:.9g} "
         f"momentum={args.momentum:.6g} weight_decay={args.weight_decay:.9g} "
@@ -357,6 +444,8 @@ def train(args: argparse.Namespace) -> TrainResult:
         for batch in train_loader:
             images = batch["image"].to(device, non_blocking=True)
             targets = batch["label"].to(device, non_blocking=True)
+            if args.method == "gals":
+                images.requires_grad_(True)
             optimizer.zero_grad(set_to_none=True)
             logits, attention_logits, features = _forward(args.method, model, images)
             loss = train_criterion(logits, targets)
@@ -368,6 +457,27 @@ def train(args: argparse.Namespace) -> TrainResult:
                 if features is None:
                     raise RuntimeError("ElRep did not return penultimate features")
                 loss = loss + elrep_penalty(features, args.theta1, args.theta2)
+            elif args.method == "gals":
+                teacher, valid = combine_gals_attention(
+                    batch["attention"].to(device, non_blocking=True)
+                )
+                if not bool(valid.all()):
+                    invalid = int((~valid).sum().item())
+                    raise RuntimeError(f"GALS batch contains {invalid} all-zero teacher maps")
+                input_gradient = torch.autograd.grad(
+                    loss,
+                    images,
+                    retain_graph=True,
+                    create_graph=True,
+                )[0]
+                outside_gradient = input_gradient * (1.0 - teacher)
+                if args.grad_criterion == "L1":
+                    gradient_loss = outside_gradient.abs().mean()
+                elif args.grad_criterion == "L2":
+                    gradient_loss = outside_gradient.square().mean()
+                else:
+                    raise ValueError(f"Unknown gradient criterion: {args.grad_criterion}")
+                loss = loss + args.grad_weight * gradient_loss
             loss.backward()
             optimizer.step()
             train_loss_sum += float(loss.detach().item()) * images.shape[0]
@@ -455,6 +565,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--abn-cls-weight", type=float, default=1.0)
     parser.add_argument("--theta1", type=float, default=1e-4)
     parser.add_argument("--theta2", type=float, default=1e-5)
+    parser.add_argument("--gals-map-root", type=Path)
+    parser.add_argument("--grad-weight", type=float, default=1e4)
+    parser.add_argument("--grad-criterion", choices=("L1", "L2"), default="L1")
     parser.add_argument("--pretrained", action="store_true", default=True)
     parser.add_argument("--no-pretrained", action="store_false", dest="pretrained")
     parser.add_argument("--abn-checkpoint", type=Path)

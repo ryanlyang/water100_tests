@@ -36,7 +36,11 @@ def _args(**overrides):
 class ImageNet9SweepContractTests(unittest.TestCase):
     def test_all_expected_non_teacher_methods_have_search_spaces(self):
         self.assertEqual(set(sweep.METHODS), set(sweep.SEARCH_SPACES))
-        self.assertEqual(set(sweep.METHODS), {"erm", "upweight", "abn", "elrep"})
+        self.assertEqual(
+            set(sweep.NON_TEACHER_METHODS),
+            {"erm", "upweight", "abn", "elrep"},
+        )
+        self.assertIn("gals", sweep.METHODS)
 
     def test_contract_excludes_official_variants(self):
         contract = sweep._contract(_args())

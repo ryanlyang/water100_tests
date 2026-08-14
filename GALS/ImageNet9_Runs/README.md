@@ -157,6 +157,23 @@ Every map is named by the unique ImageNet source `sample_id`, retains the GALS
 Existing valid files are reused after interruption. Only Original training
 images are selected; validation and all official variants are excluded.
 
+After the full map audit passes, launch the resumable GALS sweep:
+
+```bash
+sbatch ImageNet9_Runs/run_imagenet9_gals_sweep.sbatch
+```
+
+The study maximizes Original validation macro-class accuracy and targets 50
+completed Optuna trials. It sweeps `base_lr` and `classifier_lr` over
+`[1e-5, 5e-2]` (log), `grad_weight` over `[1e3, 1e5]` (log), and
+`grad_criterion` over `{L1,L2}`. ResNet-50 initialization, SGD momentum 0.9,
+weight decay `1e-5`, 20 epochs, and the GALS `average_nonzero`/
+`suppress_outside` mechanics are fixed. The Slurm walltime is three days and
+the driver stops admitting trials after 70 hours. Re-submit the same command
+to continue the stable `imagenet9_gals_main` SQLite study until 50 trials have
+completed; validation and official Backgrounds Challenge variants are never
+used as teacher-map inputs or robustness-selection targets.
+
 ## R4RR VOC compatibility workspace
 
 R4RR map generation uses the existing WeCLIP+ CLIP+DINO+CRF pipeline. Prepare

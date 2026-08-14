@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resumable Optuna sweeps for non-teacher ImageNet-9 baselines."""
+"""Resumable Optuna sweeps for ImageNet-9 baselines."""
 
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence
 
 
-METHODS = ("erm", "upweight", "abn", "elrep")
+NON_TEACHER_METHODS = ("erm", "upweight", "abn", "elrep")
+METHODS = NON_TEACHER_METHODS + ("gals",)
 OBJECTIVE_NAME = "val_macro_class_accuracy"
 RESULT_PREFIX = "[RESULT] "
 
@@ -41,6 +42,12 @@ SEARCH_SPACES: Mapping[str, Mapping[str, object]] = {
         "classifier_lr": (1e-5, 5e-2, "log"),
         "theta1": (1e-5, 1e-2, "log"),
         "theta2": (1e-6, 1e-3, "log"),
+    },
+    "gals": {
+        "base_lr": (1e-5, 5e-2, "log"),
+        "classifier_lr": (1e-5, 5e-2, "log"),
+        "grad_weight": (1e3, 1e5, "log"),
+        "grad_criterion": ("L1", "L2", "categorical"),
     },
 }
 
@@ -77,6 +84,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--max-hours", type=float, default=94.0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--abn-checkpoint", type=Path)
+    parser.add_argument("--gals-map-root", type=Path)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--trainer", type=Path, default=Path(__file__).with_name("train_imagenet9_baseline.py"))
     parser.add_argument("--no-enqueue-default", action="store_true")
@@ -84,7 +92,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def _contract(args: argparse.Namespace) -> Dict[str, object]:
-    return {
+    contract = {
         "method": args.method,
         "search_space": SEARCH_SPACES[args.method],
         "epochs": args.epochs,
@@ -96,6 +104,42 @@ def _contract(args: argparse.Namespace) -> Dict[str, object]:
         "objective": OBJECTIVE_NAME,
         "official_variants_used": False,
     }
+    if args.method == "gals":
+        contract["gals_maps"] = _validate_gals_maps(args)
+    return contract
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _validate_gals_maps(args: argparse.Namespace) -> Dict[str, object]:
+    if args.gals_map_root is None:
+        raise ValueError("GALS requires --gals-map-root")
+    contract_path = args.gals_map_root / "map_contract.json"
+    if not contract_path.is_file():
+        raise FileNotFoundError(contract_path)
+    map_contract = json.loads(contract_path.read_text())
+    if map_contract.get("map_tensor_key") != "unnormalized_attentions":
+        raise RuntimeError(f"Unexpected GALS map tensor contract: {contract_path}")
+    if map_contract.get("expected_map_shape") != [2, 1, 7, 7]:
+        raise RuntimeError(f"Unexpected GALS map shape contract: {contract_path}")
+    if map_contract.get("manifest_sha256") != _sha256(args.manifest):
+        raise RuntimeError("GALS maps were generated from a different ImageNet-9 manifest")
+    map_count = sum(1 for _ in (args.gals_map_root / "maps").glob("*/*.pth"))
+    if map_count != 45405:
+        raise RuntimeError(f"Expected 45,405 GALS maps, found {map_count}")
+    return {
+        "root": str(args.gals_map_root.resolve()),
+        "map_count": map_count,
+        "map_contract_sha256": _sha256(contract_path),
+        "model": map_contract.get("model"),
+        "method": map_contract.get("method"),
+    }
 
 
 def _contract_hash(contract: Mapping[str, object]) -> str:
@@ -103,21 +147,26 @@ def _contract_hash(contract: Mapping[str, object]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _suggest(trial, method: str, fixed_momentum: float) -> Dict[str, float]:
-    params: Dict[str, float] = {}
+def _suggest(trial, method: str, fixed_momentum: float) -> Dict[str, object]:
+    params: Dict[str, object] = {}
     for name, specification in SEARCH_SPACES[method].items():
         low, high, scale = specification
-        params[name] = float(
-            trial.suggest_float(name, float(low), float(high), log=(scale == "log"))
-        )
+        if scale == "categorical":
+            params[name] = trial.suggest_categorical(name, list(specification[:-1]))
+        else:
+            params[name] = float(
+                trial.suggest_float(name, float(low), float(high), log=(scale == "log"))
+            )
     params.setdefault("momentum", fixed_momentum)
     params.setdefault("abn_cls_weight", 1.0)
     params.setdefault("theta1", 1e-4)
     params.setdefault("theta2", 1e-5)
+    params.setdefault("grad_weight", 1e4)
+    params.setdefault("grad_criterion", "L1")
     return params
 
 
-def _default_trial(method: str) -> Dict[str, float]:
+def _default_trial(method: str) -> Dict[str, object]:
     defaults = {
         "erm": {"base_lr": 1e-2, "classifier_lr": 1e-3, "momentum": 0.9},
         "upweight": {"base_lr": 1e-2, "classifier_lr": 1e-3},
@@ -128,11 +177,17 @@ def _default_trial(method: str) -> Dict[str, float]:
             "theta1": 1e-4,
             "theta2": 1e-5,
         },
+        "gals": {
+            "base_lr": 5e-3,
+            "classifier_lr": 1e-4,
+            "grad_weight": 1e4,
+            "grad_criterion": "L1",
+        },
     }
     return defaults[method]
 
 
-def _trainer_command(args: argparse.Namespace, params: Mapping[str, float]) -> List[str]:
+def _trainer_command(args: argparse.Namespace, params: Mapping[str, object]) -> List[str]:
     command = [
         args.python,
         "-u",
@@ -157,6 +212,16 @@ def _trainer_command(args: argparse.Namespace, params: Mapping[str, float]) -> L
         if args.abn_checkpoint is None:
             raise ValueError("ABN sweep requires --abn-checkpoint")
         command.extend(["--abn-checkpoint", str(args.abn_checkpoint)])
+    elif args.method == "gals":
+        if args.gals_map_root is None:
+            raise ValueError("GALS sweep requires --gals-map-root")
+        command.extend(
+            [
+                "--gals-map-root", str(args.gals_map_root),
+                "--grad-weight", str(params["grad_weight"]),
+                "--grad-criterion", str(params["grad_criterion"]),
+            ]
+        )
     return command
 
 
@@ -217,7 +282,8 @@ def _write_study_csv(study, path: Path) -> None:
 
     fieldnames = [
         "trial", "state", "objective", "base_lr", "classifier_lr", "momentum",
-        "abn_cls_weight", "theta1", "theta2", "best_epoch", "best_val_accuracy",
+        "abn_cls_weight", "theta1", "theta2", "grad_weight", "grad_criterion",
+        "best_epoch", "best_val_accuracy",
         "best_val_per_class_accuracy", "class_weights", "seconds", "log_path",
     ]
     rows = []
@@ -233,6 +299,8 @@ def _write_study_csv(study, path: Path) -> None:
                 "abn_cls_weight": trial.params.get("abn_cls_weight", ""),
                 "theta1": trial.params.get("theta1", ""),
                 "theta2": trial.params.get("theta2", ""),
+                "grad_weight": trial.params.get("grad_weight", ""),
+                "grad_criterion": trial.params.get("grad_criterion", ""),
                 "best_epoch": trial.user_attrs.get("best_epoch", ""),
                 "best_val_accuracy": trial.user_attrs.get("best_val_accuracy", ""),
                 "best_val_per_class_accuracy": json.dumps(trial.user_attrs.get("best_val_per_class_accuracy", [])),
