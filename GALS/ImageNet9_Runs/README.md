@@ -122,6 +122,31 @@ and each completed stage-2 configuration persist independently across jobs.
 GALS and R4RR are launched only after their teacher maps have been generated
 and audited.
 
+## CLIP ViT zero-shot Backgrounds Challenge evaluation
+
+The following test-only job evaluates OpenAI CLIP ViT-B/16 and ViT-B/32 on all
+eight official Backgrounds Challenge variants. Both architectures use their
+native CLIP preprocessing and the same frozen two-template foreground prompt
+ensemble. No reconstructed validation images or official test results are used
+for prompt selection or tuning.
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+sbatch ImageNet9_Runs/run_imagenet9_clip_vit_zeroshot.sbatch
+```
+
+Stable outputs are written under
+`/home/ryreu/guided_cnn/logsImageNet9/clip_vit_zeroshot_openai/`:
+
+- `variant_results.csv`: overall and macro-class accuracy for each variant.
+- `per_class_results.csv`: class-level accuracy and support.
+- `robustness_summary.csv`: Original, mixed-variant average, foreground-only,
+  background-only, no-foreground, and worst-variant summaries.
+- `evaluation_contract.json`: model, weights, prompt, manifest, and split audit.
+
+Each model also has a completed JSON under `models/`, allowing the same job to
+resume without repeating a model whose eight variant evaluations are complete.
+
 ## GALS ViT map quality control
 
 ImageNet-9 GALS uses OpenAI CLIP ViT-B/32 transformer relevance maps. Each
