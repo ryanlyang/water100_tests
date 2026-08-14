@@ -18,6 +18,7 @@ class FakeTrial:
             "classifier_lr": 2e-4,
             "grad_weight": 3e3,
             "cam_weight": 2.5,
+            "abn_att_weight": 0.75,
         }[name]
 
     def suggest_categorical(self, name, choices):
@@ -72,6 +73,13 @@ class ImageNet9GALSTests(unittest.TestCase):
         gradcam.mean().backward()
         self.assertIsNotNone(features.grad)
         self.assertIsNotNone(classifier.weight.grad)
+
+    def test_abn_attention_search_uses_established_three_ranges(self):
+        params = sweep._suggest(FakeTrial(), "gals_abn", fixed_momentum=0.9)
+        self.assertEqual(params["base_lr"], 1e-3)
+        self.assertEqual(params["classifier_lr"], 2e-4)
+        self.assertEqual(params["abn_att_weight"], 0.75)
+        self.assertNotIn("abn_cls_weight", sweep.SEARCH_SPACES["gals_abn"])
 
 
 if __name__ == "__main__":

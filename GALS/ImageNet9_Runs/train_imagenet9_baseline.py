@@ -34,7 +34,15 @@ from imagenet9_data import (
 )
 
 
-METHODS = ("erm", "upweight", "abn", "elrep", "gals", "gals_gradcam")
+METHODS = (
+    "erm",
+    "upweight",
+    "abn",
+    "elrep",
+    "gals",
+    "gals_gradcam",
+    "gals_abn",
+)
 
 
 class ImageNet9GALSDataset(Dataset):
@@ -194,7 +202,7 @@ def build_model(
     pretrained: bool,
     abn_checkpoint: Optional[Path] = None,
 ) -> Tuple[nn.Module, Dict[str, object]]:
-    if method == "abn":
+    if method in {"abn", "gals_abn"}:
         from models.resnet_abn import resnet50 as resnet50_abn
 
         model = resnet50_abn(
@@ -268,9 +276,10 @@ def _forward(
     model: nn.Module,
     images: torch.Tensor,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[torch.Tensor]]:
-    if method == "abn":
-        attention_logits, logits, _auxiliary = model(images)
-        return logits, attention_logits, None
+    if method in {"abn", "gals_abn"}:
+        attention_logits, logits, auxiliary = model(images)
+        attention = auxiliary[0] if method == "gals_abn" else None
+        return logits, attention_logits, attention
     if method == "elrep":
         logits, features = forward_resnet_features(model, images)
         return logits, None, features
@@ -318,7 +327,7 @@ def build_loaders(
         "pin_memory": torch.cuda.is_available(),
         "drop_last": False,
     }
-    if method in {"gals", "gals_gradcam"}:
+    if method in {"gals", "gals_gradcam", "gals_abn"}:
         if gals_map_root is None:
             raise ValueError("GALS requires --gals-map-root")
         train_dataset = ImageNet9GALSDataset(
@@ -390,6 +399,7 @@ def _save_checkpoint(
                 "grad_weight": args.grad_weight,
                 "grad_criterion": args.grad_criterion,
                 "cam_weight": args.cam_weight,
+                "abn_att_weight": args.abn_att_weight,
                 "gals_map_root": str(args.gals_map_root) if args.gals_map_root else "",
                 "epochs": args.epochs,
                 "seed": args.seed,
@@ -467,6 +477,14 @@ def train(args: argparse.Namespace) -> TrainResult:
             "combine=average_nonzero target_layer=layer4",
             flush=True,
         )
+    elif args.method == "gals_abn":
+        print(
+            f"[GALS-ABN] map_root={args.gals_map_root} "
+            f"abn_cls_weight={args.abn_cls_weight:.9g} "
+            f"abn_att_weight={args.abn_att_weight:.9g} criterion=L1 "
+            "mode=suppress_outside combine=average_nonzero attention_shape=14x14",
+            flush=True,
+        )
     print(
         f"[HPARAMS] base_lr={args.base_lr:.9g} classifier_lr={args.classifier_lr:.9g} "
         f"momentum={args.momentum:.6g} weight_decay={args.weight_decay:.9g} "
@@ -489,10 +507,29 @@ def train(args: argparse.Namespace) -> TrainResult:
             optimizer.zero_grad(set_to_none=True)
             logits, attention_logits, features = _forward(args.method, model, images)
             loss = train_criterion(logits, targets)
-            if args.method == "abn":
+            if args.method in {"abn", "gals_abn"}:
                 if attention_logits is None:
                     raise RuntimeError("ABN did not return attention-branch logits")
                 loss = loss + args.abn_cls_weight * train_criterion(attention_logits, targets)
+                if args.method == "gals_abn":
+                    if features is None:
+                        raise RuntimeError("GALS ABN did not return its spatial attention map")
+                    teacher, valid = combine_gals_attention(
+                        batch["attention"].to(device, non_blocking=True)
+                    )
+                    if not bool(valid.all()):
+                        invalid = int((~valid).sum().item())
+                        raise RuntimeError(
+                            f"GALS ABN batch contains {invalid} all-zero teacher maps"
+                        )
+                    teacher = F.interpolate(
+                        teacher,
+                        size=features.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False,
+                    )
+                    attention_loss = F.l1_loss(features, features * teacher)
+                    loss = loss + args.abn_att_weight * attention_loss
             elif args.method == "elrep":
                 if features is None:
                     raise RuntimeError("ElRep did not return penultimate features")
@@ -629,6 +666,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--grad-weight", type=float, default=1e4)
     parser.add_argument("--grad-criterion", choices=("L1", "L2"), default="L1")
     parser.add_argument("--cam-weight", type=float, default=1.0)
+    parser.add_argument("--abn-att-weight", type=float, default=1.0)
     parser.add_argument("--pretrained", action="store_true", default=True)
     parser.add_argument("--no-pretrained", action="store_false", dest="pretrained")
     parser.add_argument("--abn-checkpoint", type=Path)

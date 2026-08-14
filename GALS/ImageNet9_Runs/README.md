@@ -190,6 +190,20 @@ prompts with `average_nonzero`, and uses L1 map matching. Its stable state is
 stored under `logsImageNet9/sweeps/gals_gradcam/main/`; re-submit the same
 command after interruption to continue to 50 completed trials.
 
+The GALS+ABN comparison is likewise isolated and resumable:
+
+```bash
+sbatch ImageNet9_Runs/run_imagenet9_gals_abn_sweep.sbatch
+```
+
+It uses the pretrained ABN ResNet-50 and keeps the auxiliary ABN
+classification weight fixed at `1.0`. The ABN 14-by-14 spatial attention is
+supervised by the same ViT maps with L1 `suppress_outside` loss. The 50-trial
+study sweeps `base_lr` over `[1e-3,1e-1]`, `classifier_lr` over
+`[1e-4,1e-2]`, and `abn_att_weight` over `[1e-2,1e2]` (all log-scaled), with
+a three-day walltime and Original validation macro-class selection. Its stable
+state is stored under `logsImageNet9/sweeps/gals_abn/main/`.
+
 ## R4RR VOC compatibility workspace
 
 R4RR map generation uses the existing WeCLIP+ CLIP+DINO+CRF pipeline. Prepare
