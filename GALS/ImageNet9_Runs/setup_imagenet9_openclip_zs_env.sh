@@ -25,6 +25,8 @@ set +u
 conda activate "$ENV_NAME"
 set -u
 
+export PYTHONNOUSERSITE=1
+
 python -m pip install --upgrade \
   'pip<26' \
   'setuptools<76' \
@@ -38,12 +40,12 @@ python -m pip install --index-url https://download.pytorch.org/whl/cu117 \
 
 python -m pip install \
   open_clip_torch==2.31.0 \
-  transformers==4.38.2 \
+  transformers==4.49.0 \
+  tokenizers==0.21.0 \
   sentencepiece==0.2.0 \
   numpy==1.24.4 \
   Pillow==10.4.0
 
-export PYTHONNOUSERSITE=1
 python - <<'PY'
 import open_clip
 import sys
@@ -59,6 +61,13 @@ missing = sorted(required - available)
 if missing:
     raise RuntimeError(f"OpenCLIP registry is missing required model pairs: {missing}")
 
+# This checkpoint uses a newer Gemma tokenizer JSON. Constructing and invoking
+# it here catches an incompatible transformers/tokenizers stack before SBATCH.
+siglip2_tokenizer = open_clip.get_tokenizer("ViT-B-16-SigLIP2-256")
+siglip2_tokens = siglip2_tokenizer(["a photo of a bird"])
+if siglip2_tokens.shape[0] != 1:
+    raise RuntimeError(f"Unexpected SigLIP2 token shape: {siglip2_tokens.shape}")
+
 assert sys.version_info[:2] == (3, 10), sys.version
 assert torch.__version__.split("+")[0] == "2.0.0", torch.__version__
 assert torchvision.__version__.split("+")[0] == "0.15.1", torchvision.__version__
@@ -71,6 +80,7 @@ print(f"torch_cuda_build={torch.version.cuda}")
 print(f"cuda_available_on_this_host={torch.cuda.is_available()}")
 print(f"open_clip={getattr(open_clip, '__version__', 'unknown')}")
 print("required model pairs: present")
+print(f"SigLIP2 tokenizer: OK shape={tuple(siglip2_tokens.shape)}")
 PY
 
 echo "[DONE] Environment ready: $ENV_NAME"

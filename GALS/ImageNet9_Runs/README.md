@@ -189,7 +189,8 @@ CLIP evaluation. Stable outputs are written to
 `logsImageNet9/openclip_laion_siglip2_zeroshot/`. The isolated `openclip-zs`
 environment pins `open_clip_torch==2.31.0`, the first release containing the
 SigLIP2 model registry, without changing the older OpenCLIP version required by
-the WeCLIP+ training environment.
+the WeCLIP+ training environment. It also pins a compatible Transformers and
+tokenizers stack and verifies the SigLIP2 tokenizer during setup.
 
 ## GALS ViT map quality control
 
