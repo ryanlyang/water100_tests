@@ -10,7 +10,7 @@ Key behavior:
   - select by best val accuracy
 - Adds guided training stage:
   - epoch < attention_epoch: CE only
-  - epoch >= attention_epoch: CE + kl_lambda * KL(Mask || GradCAM)
+  - epoch >= attention_epoch: CE + alignment_weight * alignment_loss(GradCAM, Mask)
 - Optionally saves every epoch for checkpoint-selection diagnostics.
 """
 
@@ -33,6 +33,12 @@ import torch.optim as optim
 import torch.utils.data as utils
 from PIL import Image
 from torchvision.datasets import ImageFolder
+
+from alignment_losses import (
+    ALIGNMENT_LOSSES,
+    normalize_alignment_loss_name,
+    spatial_alignment_loss,
+)
 from torchvision.transforms import Compose, Grayscale, Lambda, ToTensor
 from torchvision import transforms
 
@@ -171,12 +177,8 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-def compute_attn_loss(cams, gt_masks):
-    cam_flat = cams.view(cams.size(0), -1)
-    gt_flat = gt_masks.view(gt_masks.size(0), -1)
-    log_p = F.log_softmax(cam_flat, dim=1)
-    gt_prob = gt_flat / (gt_flat.sum(dim=1, keepdim=True) + 1e-8)
-    return nn.KLDivLoss(reduction="batchmean")(log_p, gt_prob)
+def compute_attn_loss(cams, gt_masks, alignment_loss="forward_kl"):
+    return spatial_alignment_loss(cams, gt_masks, loss_name=alignment_loss)
 
 
 @torch.no_grad()
@@ -228,6 +230,9 @@ def fixed_split_indices(n_total, val_frac, split_seed):
 
 def train_one_seed(args, seed, full_train_guided, full_train_plain, true_test, device, loader_kwargs):
     set_seed(seed)
+    alignment_loss = normalize_alignment_loss_name(
+        getattr(args, "alignment_loss", "forward_kl")
+    )
 
     n_total = len(full_train_plain)
     train_idx, val_idx = fixed_split_indices(n_total, args.val_frac, args.split_seed)
@@ -282,7 +287,7 @@ def train_one_seed(args, seed, full_train_guided, full_train_plain, true_test, d
                 class_scores.sum().backward(retain_graph=True)
                 sal = model.grad_cam()
                 gt_small = F.interpolate(gt_masks, size=sal.shape[1:], mode="nearest").squeeze(1)
-                attn_loss = compute_attn_loss(sal, gt_small)
+                attn_loss = compute_attn_loss(sal, gt_small, alignment_loss)
 
                 optimizer.zero_grad()
                 out = model(data)
@@ -376,6 +381,12 @@ def main():
     parser.add_argument("--attention-epoch", type=int, default=7)
     parser.add_argument("--kl-lambda", type=float, default=495.60509512105125)
     parser.add_argument("--kl-incr", type=float, default=0.0)
+    parser.add_argument(
+        "--alignment-loss",
+        choices=ALIGNMENT_LOSSES,
+        default="forward_kl",
+        help="Spatial teacher/student alignment objective.",
+    )
     parser.add_argument("--n-seeds", type=int, default=5)
     parser.add_argument("--seed-start", type=int, default=0)
     parser.add_argument("--val-frac", type=float, default=0.1)
@@ -432,7 +443,8 @@ def main():
     print(f"train={len(full_train_plain)} test={len(true_test)} split={int((1-args.val_frac)*100)}/{int(args.val_frac*100)}")
     print(
         f"optimizer=Adam lr={args.lr} weight_decay={args.weight_decay} epochs={args.epochs} "
-        f"attention_epoch={args.attention_epoch} kl_lambda={args.kl_lambda} kl_incr={args.kl_incr}"
+        f"attention_epoch={args.attention_epoch} alignment_loss={args.alignment_loss} "
+        f"alignment_weight={args.kl_lambda} kl_incr={args.kl_incr}"
     )
 
     rows = []
