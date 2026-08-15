@@ -123,6 +123,11 @@ def _voc_colormap(count: int = 256) -> np.ndarray:
     return colors
 
 
+def _writable_rgb_array(image: Image.Image) -> np.ndarray:
+    """Return the writable C-order RGB buffer required by pydensecrf."""
+    return np.array(image.convert("RGB"), dtype=np.uint8, copy=True, order="C")
+
+
 def _save_prediction(
     destination: Path,
     source_path: Path,
@@ -132,7 +137,7 @@ def _save_prediction(
     import torch.nn.functional as F
 
     with Image.open(source_path) as image_file:
-        image = np.asarray(image_file.convert("RGB"), dtype=np.uint8)
+        image = _writable_rgb_array(image_file)
     height, width = image.shape[:2]
     resized = F.interpolate(
         logits.detach().cpu(),
@@ -140,7 +145,12 @@ def _save_prediction(
         mode="bilinear",
         align_corners=False,
     )
-    probabilities = F.softmax(resized, dim=1)[0].numpy()
+    probabilities = np.array(
+        F.softmax(resized, dim=1)[0].numpy(),
+        dtype=np.float32,
+        copy=True,
+        order="C",
+    )
     probabilities = post_processor(image, probabilities)
     labels = np.argmax(probabilities, axis=0).astype(np.uint8)
     encoded = _voc_colormap()[labels]
