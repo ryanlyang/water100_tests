@@ -246,7 +246,13 @@ class WeCLIP_Plus(nn.Module):
     
 
 
-    def forward(self, img, img_names='2007_000032', mode='train'):
+    def forward(
+        self,
+        img,
+        img_names='2007_000032',
+        mode='train',
+        return_cam_labels=True,
+    ):
         all_img_tokens_list = []
         cam_list = []
         b, c, h, w = img.shape
@@ -339,6 +345,12 @@ class WeCLIP_Plus(nn.Module):
         attn_fts_flatten = attn_fts.reshape(f_b, f_c, f_h*f_w)
         attn_pred = attn_fts_flatten.transpose(2, 1).bmm(attn_fts_flatten)
         attn_pred = torch.sigmoid(attn_pred)
+
+        # Teacher-map export consumes only the fused segmentation logits. PAR
+        # labels are an expensive training-side auxiliary output, particularly
+        # when VOC XML metadata refers to large original ImageNet dimensions.
+        if not return_cam_labels:
+            return seg_clip, seg_dino, None, attn_pred
 
         for i, img_name in enumerate(img_names):
             img_path = os.path.join(self.root_path, str(img_name)+'.jpg')

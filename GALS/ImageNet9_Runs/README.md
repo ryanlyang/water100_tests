@@ -370,6 +370,10 @@ The first job is a resumable 46-task array with 1,000 manifest-ordered images
 per task (405 in the final task). Each task loads the fixed 29,000-iteration
 checkpoint and preserves the established WeCLIP+ inference protocol: scales
 1.0 and 1.5, horizontal-flip averaging, equal CLIP/DINO logits, and DenseCRF.
+The exporter disables WeCLIP+'s auxiliary CAM/PAR label branch because these
+labels are not consumed when producing the fused-logit teacher maps; this
+avoids allocating full-resolution PAR tensors for large ImageNet source files
+without changing the saved logits.
 Maps are written as RGB VOC-colormap PNGs under
 `r4rr_teacher/weclipplus_clip_dino_v1/inference/full/val/prediction_cmap/`.
 Existing readable maps with the correct source dimensions are reused after an

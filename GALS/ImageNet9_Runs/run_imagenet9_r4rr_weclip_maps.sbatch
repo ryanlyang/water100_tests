@@ -51,6 +51,7 @@ export WECLIP_EVAL_NUM_WORKERS="${NUM_WORKERS:-${SLURM_CPUS_PER_TASK:-4}}"
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
 export XFORMERS_DISABLED=1
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:128,garbage_collection_threshold:0.8}"
 
 echo "[$(date)] Host: $(hostname)"
 echo "Checkpoint result: $TRAINING_RESULT"
@@ -58,6 +59,7 @@ echo "Workspace: $WORKSPACE_ROOT"
 echo "Output: $OUTPUT_ROOT/prediction_cmap"
 echo "Shard: [$START_INDEX,$END_INDEX)"
 echo "Protocol: scales=1.0,1.5 flip-average + DenseCRF"
+echo "Unused CAM/PAR auxiliary branch: disabled during map export"
 "$PYTHON_BIN" --version
 
 srun --unbuffered "$PYTHON_BIN" -u ImageNet9_Runs/generate_imagenet9_r4rr_weclip_maps.py \

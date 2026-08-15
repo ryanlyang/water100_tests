@@ -362,10 +362,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             align_corners=False,
         )
         base_pair = torch.cat([resized_inputs, resized_inputs.flip(-1)], dim=0)
-        model.zero_grad(set_to_none=True)
-        clip_logits, dino_logits, _cam, _attention = model(
-            base_pair, tuple(names) + tuple(names), mode="val"
-        )
+        with torch.inference_mode():
+            clip_logits, dino_logits, _cam, _attention = model(
+                base_pair,
+                tuple(names) + tuple(names),
+                mode="val",
+                return_cam_labels=False,
+            )
         combined = (0.5 * dino_logits + 0.5 * clip_logits).detach()
         target_size = combined.shape[-2:]
         scale_logits = [
@@ -384,10 +387,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 align_corners=False,
             )
             scaled_pair = torch.cat([scaled, scaled.flip(-1)], dim=0)
-            model.zero_grad(set_to_none=True)
-            clip_logits, dino_logits, _cam, _attention = model(
-                scaled_pair, tuple(names) + tuple(names), mode="val"
-            )
+            with torch.inference_mode():
+                clip_logits, dino_logits, _cam, _attention = model(
+                    scaled_pair,
+                    tuple(names) + tuple(names),
+                    mode="val",
+                    return_cam_labels=False,
+                )
             combined = (0.5 * dino_logits + 0.5 * clip_logits).detach()
             combined = F.interpolate(
                 combined, size=target_size, mode="bilinear", align_corners=False
