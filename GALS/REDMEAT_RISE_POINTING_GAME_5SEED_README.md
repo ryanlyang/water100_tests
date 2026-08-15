@@ -9,6 +9,8 @@ The submitter creates nine jobs:
 - five-seed jobs: `vanilla`, `elrep`, `upweight`, `abn`, `gals`, `afr`, `r4rr`
 - deterministic one-run jobs: `clip_lr`, `clip_zs`
 
+Each job requests a one-day wall time on the `tier3` partition.
+
 Each trained method uses its finalized RedMeat hyperparameters from
 `RightForTheRightRegions/configs/redmeat_optimized_hparams.yaml`. Deep models
 run for 150 epochs, except AFR, which retains its native two-stage training
