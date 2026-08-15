@@ -122,6 +122,31 @@ and each completed stage-2 configuration persist independently across jobs.
 GALS and R4RR are launched only after their teacher maps have been generated
 and audited.
 
+## Final five-seed evaluation
+
+After the four non-teacher Optuna studies and the AFR grid are complete, submit
+one resumable job per method:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+bash ImageNet9_Runs/submit_imagenet9_final_non_teacher_5seed.sh
+```
+
+This submits ERM, Upweight, ABN, ElRep, AFR, and CLIP-LR as six independent
+jobs. For the first four methods, `summary.json` must certify all 50 completed
+trials; its best validation-selected parameters are locked before seeds 0--4
+are retrained. AFR preserves its native 33-by-5 validation grid independently
+within every seed. CLIP-LR locks the selected `C`, extracts official-test RN50
+features once, and repeats the fixed logistic-regression fit across the five
+seeds to measure any solver variance.
+
+Each seed's frozen checkpoint is evaluated on all eight official variants only
+after validation selection. Stable results are written to
+`logsImageNet9/final/<method>/main/`: `per_seed.csv` contains the individual
+results and `summary.csv` contains their mean and population standard
+deviation. BG-Gap is computed as Mixed-Same minus Mixed-Rand within each seed
+before aggregation. Re-running the submitter safely resumes incomplete jobs.
+
 ## CLIP ViT zero-shot Backgrounds Challenge evaluation
 
 The following test-only job evaluates ViT-B/16 and ViT-B/32 through the same

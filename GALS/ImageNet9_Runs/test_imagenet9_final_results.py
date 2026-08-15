@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+
+import csv
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from imagenet9_final_utils import ALL_VARIANTS, evaluation_to_row, write_method_tables
+
+
+def evaluation(seed, mixed_same, mixed_rand):
+    variants = {}
+    for name in ALL_VARIANTS:
+        value = 0.5
+        if name == "mixed_same":
+            value = mixed_same
+        elif name == "mixed_rand":
+            value = mixed_rand
+        variants[name] = {
+            "accuracy": value,
+            "macro_class_accuracy": value,
+        }
+    return {
+        "method": "erm",
+        "seed": seed,
+        "checkpoint": f"seed_{seed}.pt",
+        "selection_value": 0.8,
+        "variant_results": variants,
+    }
+
+
+class ImageNet9FinalResultTests(unittest.TestCase):
+    def test_bg_gap_is_computed_within_seed(self):
+        row = evaluation_to_row(evaluation(0, 0.81, 0.63))
+        self.assertAlmostEqual(row["mixed_same"], 81.0)
+        self.assertAlmostEqual(row["mixed_rand"], 63.0)
+        self.assertAlmostEqual(row["bg_gap"], 18.0)
+
+    def test_method_tables_use_population_std_and_partial_seed_sets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for seed, same, rand in ((0, 0.8, 0.6), (1, 0.9, 0.5)):
+                path = root / f"evaluation_{seed}.json"
+                path.write_text(json.dumps(evaluation(seed, same, rand)))
+                paths.append(path)
+            write_method_tables("erm", root, paths)
+            with (root / "summary.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            gap = next(row for row in rows if row["metric"] == "bg_gap")
+            self.assertAlmostEqual(float(gap["mean"]), 30.0)
+            self.assertAlmostEqual(float(gap["std"]), 10.0)
+            self.assertEqual(int(gap["n"]), 2)
+            summary = json.loads((root / "summary.json").read_text())
+            self.assertEqual(summary["seeds"], [0, 1])
+            self.assertEqual(summary["standard_deviation"], "population")
+
+
+if __name__ == "__main__":
+    unittest.main()
