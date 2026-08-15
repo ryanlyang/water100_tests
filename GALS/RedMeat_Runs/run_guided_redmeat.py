@@ -19,10 +19,29 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
 
-# Import shared guided-CNN training/model utilities from the project root.
+# Import the shared guided-CNN implementation used by the original sweeps.
+# Some repository layouts keep it at the project root; newer layouts moved it
+# into old_stuff without changing the implementation.
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+BASE_ROOT_CANDIDATES = (PROJECT_ROOT, PROJECT_ROOT / "old_stuff")
+BASE_ROOT = next(
+    (
+        candidate
+        for candidate in BASE_ROOT_CANDIDATES
+        if (candidate / "run_guided_waterbird.py").is_file()
+    ),
+    None,
+)
+if BASE_ROOT is None:
+    searched = ", ".join(
+        str(candidate / "run_guided_waterbird.py")
+        for candidate in BASE_ROOT_CANDIDATES
+    )
+    raise ModuleNotFoundError(
+        f"Could not locate the shared R4RR Waterbirds trainer; searched: {searched}"
+    )
+if str(BASE_ROOT) not in sys.path:
+    sys.path.insert(0, str(BASE_ROOT))
 import run_guided_waterbird as base  # noqa: E402
 
 
