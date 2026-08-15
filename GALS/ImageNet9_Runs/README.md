@@ -178,6 +178,7 @@ To compare the other frozen teacher-family VLMs used in the paper, run:
 
 ```bash
 cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+bash ImageNet9_Runs/setup_imagenet9_openclip_zs_env.sh
 sbatch ImageNet9_Runs/run_imagenet9_openclip_siglip2_zeroshot.sbatch
 ```
 
@@ -185,7 +186,10 @@ This evaluates OpenCLIP `ViT-B-32` with `laion2b_s34b_b79k` weights and
 `ViT-B-16-SigLIP2-256` with `webli` weights. The class prompts, official test
 variants, metrics, and resumable output format are identical to the OpenAI
 CLIP evaluation. Stable outputs are written to
-`logsImageNet9/openclip_laion_siglip2_zeroshot/`.
+`logsImageNet9/openclip_laion_siglip2_zeroshot/`. The isolated `openclip-zs`
+environment pins `open_clip_torch==2.31.0`, the first release containing the
+SigLIP2 model registry, without changing the older OpenCLIP version required by
+the WeCLIP+ training environment.
 
 ## GALS ViT map quality control
 
