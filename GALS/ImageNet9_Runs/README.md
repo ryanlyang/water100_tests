@@ -124,11 +124,13 @@ and audited.
 
 ## CLIP ViT zero-shot Backgrounds Challenge evaluation
 
-The following test-only job evaluates OpenAI CLIP ViT-B/16 and ViT-B/32 on all
-eight official Backgrounds Challenge variants. Both architectures use their
-native CLIP preprocessing and the same frozen two-template foreground prompt
-ensemble. No reconstructed validation images or official test results are used
-for prompt selection or tuning.
+The following test-only job evaluates ViT-B/16 and ViT-B/32 through the same
+OpenCLIP implementation with OpenAI weights on all eight official Backgrounds
+Challenge variants. Both architectures use their native CLIP preprocessing and
+the same frozen two-template foreground prompt ensemble. No reconstructed
+validation images or official test results are used for prompt selection or
+tuning. The job uses the `r4rr-weclip` environment because that environment
+contains the pinned OpenCLIP implementation used by the WeCLIP+ teacher.
 
 ```bash
 cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS

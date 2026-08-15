@@ -72,6 +72,7 @@ class ImageNet9ClipZeroShotTests(unittest.TestCase):
         self.assertFalse(contract["validation_or_tuning_data_used"])
         self.assertFalse(contract["prompt_selection_on_official_test"])
         self.assertEqual(contract["weights"], "openai")
+        self.assertEqual(contract["implementation"], "open_clip")
 
 
 if __name__ == "__main__":

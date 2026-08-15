@@ -18,14 +18,15 @@ PROTOCOL_NAME="${PROTOCOL_NAME:-reconstructed_original_bbox1_v1}"
 LOG_ROOT="${LOG_ROOT:-/home/ryreu/guided_cnn/logsImageNet9}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${LOG_ROOT}/clip_vit_zeroshot_openai}"
 DOWNLOAD_ROOT="${DOWNLOAD_ROOT:-/home/ryreu/guided_cnn/models/openai_clip}"
-PYTHON_BIN="${PYTHON_BIN:-/home/ryreu/miniconda3/envs/gals_a100/bin/python}"
+CONDA_ENV="${CONDA_ENV:-r4rr-weclip}"
+PYTHON_BIN="${PYTHON_BIN:-/home/ryreu/miniconda3/envs/${CONDA_ENV}/bin/python}"
 
 mkdir -p "$LOG_ROOT" "$OUTPUT_ROOT" "$DOWNLOAD_ROOT"
 cd "$REPO"
 
 set +u
 source ~/miniconda3/etc/profile.d/conda.sh
-conda activate gals_a100
+conda activate "$CONDA_ENV"
 set -u
 
 export PYTHONNOUSERSITE=1
@@ -34,7 +35,8 @@ export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 
 echo "[$(date)] Host: $(hostname)"
-echo "Models: OpenAI CLIP ViT-B/16 and ViT-B/32"
+echo "Models: OpenCLIP ViT-B/16 and ViT-B/32 with OpenAI weights"
+echo "Conda environment: $CONDA_ENV"
 echo "Data: $DATA_ROOT"
 echo "Protocol: $PROTOCOL_NAME"
 echo "Evaluation: all eight official Backgrounds Challenge variants"

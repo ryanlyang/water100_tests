@@ -6,9 +6,9 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import inspect
 import json
 import random
-import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
@@ -17,6 +17,10 @@ import numpy as np
 
 
 MODEL_NAMES: Tuple[str, ...] = ("ViT-B/16", "ViT-B/32")
+OPENCLIP_MODEL_NAMES: Mapping[str, str] = {
+    "ViT-B/16": "ViT-B-16",
+    "ViT-B/32": "ViT-B-32",
+}
 PROMPT_TEMPLATES: Tuple[str, ...] = (
     "an image of {article} {concept}",
     "a photo of {article} {concept}",
@@ -98,13 +102,38 @@ def _seed_everything(seed: int) -> None:
     torch.backends.cudnn.benchmark = False
 
 
-def _load_clip():
-    repo = Path(__file__).resolve().parents[1]
-    if str(repo) not in sys.path:
-        sys.path.insert(0, str(repo))
-    from CLIP.clip import clip  # type: ignore
+def _load_open_clip():
+    try:
+        import open_clip  # type: ignore
+    except ImportError as error:
+        raise RuntimeError(
+            "This evaluator requires open_clip. Run it in the r4rr-weclip environment."
+        ) from error
+    return open_clip
 
-    return clip
+
+def _create_openclip_model(open_clip, model_name: str, device: str, download_root: Optional[Path]):
+    openclip_name = OPENCLIP_MODEL_NAMES[model_name]
+    kwargs = {
+        "model_name": openclip_name,
+        "pretrained": "openai",
+        "device": device,
+    }
+    if download_root is not None:
+        download_root.mkdir(parents=True, exist_ok=True)
+        parameters = inspect.signature(open_clip.create_model_and_transforms).parameters
+        if "cache_dir" in parameters:
+            kwargs["cache_dir"] = str(download_root)
+        else:
+            print(
+                "[INFO] open_clip does not expose cache_dir; using its default cache",
+                flush=True,
+            )
+    model, _train_preprocess, eval_preprocess = open_clip.create_model_and_transforms(
+        **kwargs
+    )
+    tokenizer = open_clip.get_tokenizer(openclip_name)
+    return model, eval_preprocess, tokenizer
 
 
 def _slug(model_name: str) -> str:
@@ -132,6 +161,7 @@ def build_contract(args: argparse.Namespace) -> Dict[str, object]:
         ),
         "models": list(args.models),
         "weights": "openai",
+        "implementation": "open_clip",
         "class_names": list(CLASS_NAMES),
         "prompt_concepts": concepts,
         "prompt_templates": list(PROMPT_TEMPLATES),
@@ -146,14 +176,14 @@ def build_contract(args: argparse.Namespace) -> Dict[str, object]:
     }
 
 
-def _build_text_classifier(model, clip, class_names: Sequence[str], device: str):
+def _build_text_classifier(model, tokenizer, class_names: Sequence[str], device: str):
     import torch
     import torch.nn.functional as F
 
     class_features = []
     with torch.no_grad():
         for class_name in class_names:
-            tokens = clip.tokenize(prompts_for_class(class_name)).to(device)
+            tokens = tokenizer(prompts_for_class(class_name)).to(device)
             prompt_features = model.encode_text(tokens).float()
             prompt_features = F.normalize(prompt_features, dim=1)
             class_feature = F.normalize(prompt_features.mean(dim=0), dim=0)
@@ -373,7 +403,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         for variant in FORBIDDEN_SELECTION_VARIANTS
     }
-    clip = _load_clip()
+    open_clip = _load_open_clip()
     model_results: Dict[str, Dict[str, object]] = {}
 
     for model_name in args.models:
@@ -391,13 +421,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 continue
 
         print(f"[MODEL] {model_name} weights=openai device={args.device}", flush=True)
-        load_kwargs = {"device": args.device, "jit": False}
-        if args.download_root is not None:
-            args.download_root.mkdir(parents=True, exist_ok=True)
-            load_kwargs["download_root"] = str(args.download_root)
-        model, preprocess = clip.load(model_name, **load_kwargs)
+        model, preprocess, tokenizer = _create_openclip_model(
+            open_clip, model_name, args.device, args.download_root
+        )
         model.eval()
-        text_classifier = _build_text_classifier(model, clip, CLASS_NAMES, args.device)
+        text_classifier = _build_text_classifier(
+            model, tokenizer, CLASS_NAMES, args.device
+        )
         variant_results: Dict[str, Dict[str, object]] = {}
         for variant in FORBIDDEN_SELECTION_VARIANTS:
             metrics = _evaluate_variant(
