@@ -174,6 +174,19 @@ Stable outputs are written under
 Each model also has a completed JSON under `models/`, allowing the same job to
 resume without repeating a model whose eight variant evaluations are complete.
 
+To compare the other frozen teacher-family VLMs used in the paper, run:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+sbatch ImageNet9_Runs/run_imagenet9_openclip_siglip2_zeroshot.sbatch
+```
+
+This evaluates OpenCLIP `ViT-B-32` with `laion2b_s34b_b79k` weights and
+`ViT-B-16-SigLIP2-256` with `webli` weights. The class prompts, official test
+variants, metrics, and resumable output format are identical to the OpenAI
+CLIP evaluation. Stable outputs are written to
+`logsImageNet9/openclip_laion_siglip2_zeroshot/`.
+
 ## GALS ViT map quality control
 
 ImageNet-9 GALS uses OpenAI CLIP ViT-B/32 transformer relevance maps. Each
