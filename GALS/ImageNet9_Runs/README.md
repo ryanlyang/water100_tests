@@ -303,8 +303,9 @@ sbatch ImageNet9_Runs/run_imagenet9_gals_rn50_sweep.sbatch
 
 This study uses the same RRR search space and fixed training setup as the ViT
 map variant, but persists independently under
-`logsImageNet9/sweeps/gals_rn50/main/`. Its walltime is three days and the same
-submission command resumes it to 50 completed trials.
+`logsImageNet9/sweeps/gals_rn50/main/`. Its walltime is 40 hours; the driver
+stops admitting trials after 38 hours, and the same submission command resumes
+the SQLite study until it reaches 50 completed trials.
 
 ## R4RR VOC compatibility workspace
 
