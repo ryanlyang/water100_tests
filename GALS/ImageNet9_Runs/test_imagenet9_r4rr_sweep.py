@@ -38,6 +38,14 @@ class FakeTrial:
 
 
 class ImageNet9R4RRSweepTests(unittest.TestCase):
+    def test_map_count_ignores_dot_prefixed_atomic_pngs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "sample_a.png").touch()
+            (root / "sample_b.png").touch()
+            (root / ".sample_c.deadbeef.png").touch()
+            self.assertEqual(sweep._r4rr_map_counts(root), (2, 1))
+
     def test_target_mask_decodes_expected_voc_class_only(self):
         labels = np.array([[0, 1, 2], [2, 1, 0]], dtype=np.uint8)
         encoded = voc_colormap(10)[labels]

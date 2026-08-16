@@ -213,9 +213,15 @@ def _validate_r4rr_maps(args: argparse.Namespace) -> Dict[str, object]:
             )
     if Path(str(audit.get("map_root", ""))).resolve() != args.teacher_map_root.resolve():
         raise RuntimeError("R4RR map audit points to a different teacher-map directory")
-    map_count = sum(1 for _ in args.teacher_map_root.glob("*.png"))
+    map_count, atomic_temporary_count = _r4rr_map_counts(args.teacher_map_root)
     if map_count != 45405:
         raise RuntimeError(f"Expected 45,405 R4RR maps, found {map_count}")
+    if atomic_temporary_count:
+        print(
+            f"[MAPS] Ignoring {atomic_temporary_count} dot-prefixed atomic "
+            "temporary PNG file(s).",
+            flush=True,
+        )
     return {
         "root": str(args.teacher_map_root.resolve()),
         "map_count": map_count,
@@ -227,6 +233,14 @@ def _validate_r4rr_maps(args: argparse.Namespace) -> Dict[str, object]:
         "clip_model": inference.get("clip_model"),
         "dino_model": inference.get("dino_model"),
     }
+
+
+def _r4rr_map_counts(map_root: Path) -> tuple:
+    """Count committed maps separately from dot-prefixed atomic leftovers."""
+    paths = list(map_root.glob("*.png"))
+    atomic_temporary_count = sum(path.name.startswith(".") for path in paths)
+    committed_count = len(paths) - atomic_temporary_count
+    return committed_count, atomic_temporary_count
 
 
 def _contract_hash(contract: Mapping[str, object]) -> str:
