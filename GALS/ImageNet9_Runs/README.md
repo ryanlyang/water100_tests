@@ -174,6 +174,17 @@ Stable outputs are written under
 Each model also has a completed JSON under `models/`, allowing the same job to
 resume without repeating a model whose eight variant evaluations are complete.
 
+The corresponding deterministic OpenAI CLIP RN50 zero-shot evaluation uses the
+same prompt ensemble and official-test-only protocol, with an independent
+output contract:
+
+```bash
+sbatch ImageNet9_Runs/run_imagenet9_clip_rn50_zeroshot.sbatch
+```
+
+Its stable outputs are written under
+`logsImageNet9/clip_rn50_zeroshot_openai/`.
+
 To compare the other frozen teacher-family VLMs used in the paper, run:
 
 ```bash

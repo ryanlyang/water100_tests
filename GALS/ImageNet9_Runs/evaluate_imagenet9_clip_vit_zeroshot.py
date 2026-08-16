@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate OpenAI CLIP ViT-B/16 and ViT-B/32 on official ImageNet-9 tests."""
+"""Evaluate supported OpenAI CLIP architectures on official ImageNet-9 tests."""
 
 from __future__ import annotations
 
@@ -16,8 +16,9 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 
 
-MODEL_NAMES: Tuple[str, ...] = ("ViT-B/16", "ViT-B/32")
+MODEL_NAMES: Tuple[str, ...] = ("RN50", "ViT-B/16", "ViT-B/32")
 OPENCLIP_MODEL_NAMES: Mapping[str, str] = {
+    "RN50": "RN50",
     "ViT-B/16": "ViT-B-16",
     "ViT-B/32": "ViT-B-32",
 }

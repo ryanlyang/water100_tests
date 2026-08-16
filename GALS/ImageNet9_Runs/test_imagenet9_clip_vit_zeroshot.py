@@ -16,7 +16,7 @@ from evaluate_imagenet9_clip_vit_zeroshot import (
 
 class ImageNet9ClipZeroShotTests(unittest.TestCase):
     def test_fixed_models(self):
-        self.assertEqual(MODEL_NAMES, ("ViT-B/16", "ViT-B/32"))
+        self.assertEqual(MODEL_NAMES, ("RN50", "ViT-B/16", "ViT-B/32"))
 
     def test_prompt_contract_matches_teacher_maps(self):
         self.assertEqual(PROMPT_CONCEPTS["instrument"], "musical instrument")
