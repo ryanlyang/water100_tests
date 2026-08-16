@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=in9_r4rr_sweep
+#SBATCH --job-name=in9_r4rr_align
 #SBATCH --account=reu-aisocial
 #SBATCH --partition=tier3
 #SBATCH --gres=gpu:a100:1
@@ -7,10 +7,16 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --output=/home/ryreu/guided_cnn/logsImageNet9/in9_r4rr_sweep_%j.out
-#SBATCH --error=/home/ryreu/guided_cnn/logsImageNet9/in9_r4rr_sweep_%j.err
+#SBATCH --output=/home/ryreu/guided_cnn/logsImageNet9/%x_%j.out
+#SBATCH --error=/home/ryreu/guided_cnn/logsImageNet9/%x_%j.err
 
 set -Eeuo pipefail
+
+ALIGNMENT_LOSS="${ALIGNMENT_LOSS:?Set ALIGNMENT_LOSS before submission}"
+case "$ALIGNMENT_LOSS" in
+  reverse_kl|jensen_shannon|squared_l2|cosine) ;;
+  *) echo "[ERROR] Unsupported ALIGNMENT_LOSS=$ALIGNMENT_LOSS" >&2; exit 2 ;;
+esac
 
 REPO="${REPO:-/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS}"
 DATA_ROOT="${DATA_ROOT:-/home/ryreu/guided_cnn/data/imagenet9}"
@@ -20,14 +26,13 @@ TEACHER_ROOT="${TEACHER_ROOT:-${DATA_ROOT}/r4rr_teacher/weclipplus_clip_dino_v1/
 TEACHER_AUDIT="${TEACHER_AUDIT:-${DATA_ROOT}/r4rr_teacher/weclipplus_clip_dino_v1/inference/full/audit/map_audit_summary.json}"
 LOG_ROOT="${LOG_ROOT:-/home/ryreu/guided_cnn/logsImageNet9}"
 RUN_TAG="${RUN_TAG:-main}"
-RUN_ROOT="${RUN_ROOT:-${LOG_ROOT}/sweeps/r4rr/${RUN_TAG}}"
+RUN_ROOT="${RUN_ROOT:-${LOG_ROOT}/sweeps/r4rr_${ALIGNMENT_LOSS}/${RUN_TAG}}"
 TARGET_COMPLETE_TRIALS="${TARGET_COMPLETE_TRIALS:-50}"
 EPOCHS="${EPOCHS:-20}"
 BATCH_SIZE="${BATCH_SIZE:-96}"
 NUM_WORKERS="${NUM_WORKERS:-${SLURM_CPUS_PER_TASK:-8}}"
 SWEEP_SEED="${SWEEP_SEED:-0}"
 TRAIN_SEED="${TRAIN_SEED:-0}"
-# Stop admitting trials two hours before Slurm's three-day deadline.
 MAX_HOURS="${MAX_HOURS:-70}"
 PYTHON_BIN="${PYTHON_BIN:-/home/ryreu/miniconda3/envs/gals_a100/bin/python}"
 
@@ -49,17 +54,18 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:128
 
 echo "[$(date)] Host: $(hostname)"
 echo "Method: R4RR (ImageNet-pretrained torchvision ResNet-50 student)"
+echo "Alignment loss: $ALIGNMENT_LOSS"
 echo "Manifest: $MANIFEST"
 echo "Teacher maps: $TEACHER_ROOT"
 echo "Teacher audit: $TEACHER_AUDIT"
 echo "Run root: $RUN_ROOT"
-echo "Study: imagenet9_r4rr_${RUN_TAG}"
+echo "Study: imagenet9_r4rr_${ALIGNMENT_LOSS}_${RUN_TAG}"
 echo "Target completed trials: $TARGET_COMPLETE_TRIALS"
 echo "Epochs: $EPOCHS batch_size=$BATCH_SIZE workers=$NUM_WORKERS"
 echo "Maximum driver runtime: $MAX_HOURS hours (Slurm walltime: 3 days)"
 echo "Objective: Original validation macro class accuracy"
 echo "Ranges: attention_epoch={0..19} kl_lambda=[1,500] base_lr=[1e-5,5e-2] classifier_lr=[1e-5,5e-2] lr2_mult=[0.1,3]"
-echo "Fixed: forward KL, kl_increment=kl_lambda/10/epoch, momentum=0.9, weight_decay=1e-5"
+echo "Fixed: alignment_loss=$ALIGNMENT_LOSS kl_increment=kl_lambda/10/epoch momentum=0.9 weight_decay=1e-5"
 echo "Empty target teacher maps: classification-only"
 echo "Official Backgrounds Challenge variants used for tuning: NO"
 "$PYTHON_BIN" --version
@@ -69,9 +75,9 @@ srun --unbuffered "$PYTHON_BIN" -u ImageNet9_Runs/sweep_imagenet9_baseline.py \
   --manifest "$MANIFEST" \
   --teacher-map-root "$TEACHER_ROOT" \
   --teacher-map-audit "$TEACHER_AUDIT" \
-  --alignment-loss forward_kl \
+  --alignment-loss "$ALIGNMENT_LOSS" \
   --study-db "$RUN_ROOT/optuna.sqlite3" \
-  --study-name "imagenet9_r4rr_${RUN_TAG}" \
+  --study-name "imagenet9_r4rr_${ALIGNMENT_LOSS}_${RUN_TAG}" \
   --output-csv "$RUN_ROOT/trials.csv" \
   --summary-json "$RUN_ROOT/summary.json" \
   --trial-logs "$RUN_ROOT/trials" \
@@ -88,4 +94,4 @@ srun --unbuffered "$PYTHON_BIN" -u ImageNet9_Runs/sweep_imagenet9_baseline.py \
   --python "$PYTHON_BIN" \
   --trainer ImageNet9_Runs/train_imagenet9_r4rr.py
 
-echo "[$(date)] ImageNet-9 R4RR sweep invocation finished."
+echo "[$(date)] ImageNet-9 R4RR $ALIGNMENT_LOSS sweep invocation finished."

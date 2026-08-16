@@ -7,6 +7,7 @@ import argparse
 import copy
 import json
 import random
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -42,6 +43,22 @@ from train_imagenet9_baseline import (
 )
 
 
+R4RR_TRAIN_DIR = (
+    Path(__file__).resolve().parents[1]
+    / "RightForTheRightRegions"
+    / "repro_runs"
+    / "r4rr"
+    / "train"
+)
+if str(R4RR_TRAIN_DIR) not in sys.path:
+    sys.path.insert(0, str(R4RR_TRAIN_DIR))
+from alignment_losses import (  # noqa: E402
+    ALIGNMENT_LOSSES,
+    normalize_alignment_loss_name,
+    spatial_alignment_loss,
+)
+
+
 EXPECTED_TRAIN = 45405
 EXPECTED_VAL = 4050
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
@@ -66,6 +83,7 @@ class R4RRTrainResult:
     base_lr: float
     classifier_lr: float
     lr2_mult: float
+    alignment_loss: str
     invalid_teacher_samples_seen: int
     aligned_teacher_samples_seen: int
 
@@ -196,8 +214,9 @@ def forward_resnet_cam(
 def r4rr_alignment_loss(
     cams: torch.Tensor,
     teacher_masks: torch.Tensor,
+    loss_name: str = "forward_kl",
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Forward KL over valid target masks; invalid maps remain CE-only."""
+    """Apply a registered spatial loss to valid maps; invalid maps stay CE-only."""
     if cams.ndim != 3 or teacher_masks.ndim != 3:
         raise ValueError(
             f"Expected BxHxW CAM/mask tensors, got {cams.shape}, {teacher_masks.shape}"
@@ -211,13 +230,10 @@ def r4rr_alignment_loss(
     valid = teacher_flat.sum(dim=1) > 0
     if not bool(valid.any()):
         return cams.sum() * 0.0, valid
-    cam_flat = cams[valid].flatten(1)
-    teacher_flat = teacher_flat[valid]
-    teacher_prob = teacher_flat / teacher_flat.sum(dim=1, keepdim=True).clamp_min(1e-8)
-    loss = F.kl_div(
-        F.log_softmax(cam_flat, dim=1),
-        teacher_prob,
-        reduction="batchmean",
+    loss = spatial_alignment_loss(
+        cams[valid],
+        teacher_small[valid],
+        loss_name=loss_name,
     )
     return loss, valid
 
@@ -294,6 +310,7 @@ def _save_checkpoint(
                 "base_lr": args.base_lr,
                 "classifier_lr": args.classifier_lr,
                 "lr2_mult": args.lr2_mult,
+                "alignment_loss": args.alignment_loss,
                 "momentum": args.momentum,
                 "weight_decay": args.weight_decay,
                 "epochs": args.epochs,
@@ -318,6 +335,7 @@ def train(args: argparse.Namespace) -> R4RRTrainResult:
         raise ValueError("kl_lambda and lr2_mult must be positive")
     if args.kl_increment is None:
         args.kl_increment = args.kl_lambda / 10.0
+    args.alignment_loss = normalize_alignment_loss_name(args.alignment_loss)
 
     seed_everything(args.seed)
     device = torch.device(args.device)
@@ -348,6 +366,7 @@ def train(args: argparse.Namespace) -> R4RRTrainResult:
     print(
         f"[R4RR] attention_epoch={args.attention_epoch} kl_lambda={args.kl_lambda:.9g} "
         f"kl_increment={args.kl_increment:.9g} lr2_mult={args.lr2_mult:.9g} "
+        f"alignment_loss={args.alignment_loss} "
         f"teacher_map_root={args.teacher_map_root}",
         flush=True,
     )
@@ -357,7 +376,8 @@ def train(args: argparse.Namespace) -> R4RRTrainResult:
         flush=True,
     )
     print(
-        "[PROTOCOL] CAM=ResNet50 layer4 ground-truth class; alignment=forward_kl; "
+        f"[PROTOCOL] CAM=ResNet50 layer4 ground-truth class; "
+        f"alignment={args.alignment_loss}; "
         "invalid target maps=classification_only; selection=Original val macro class accuracy",
         flush=True,
     )
@@ -393,7 +413,9 @@ def train(args: argparse.Namespace) -> R4RRTrainResult:
             optimizer.zero_grad(set_to_none=True)
             logits, cams = forward_resnet_cam(model, images, targets)
             ce_loss = criterion(logits, targets)
-            alignment_loss, valid = r4rr_alignment_loss(cams, teacher_masks)
+            alignment_loss, valid = r4rr_alignment_loss(
+                cams, teacher_masks, args.alignment_loss
+            )
             loss = ce_loss + current_kl * alignment_loss if align_active else ce_loss
             loss.backward()
             optimizer.step()
@@ -466,6 +488,7 @@ def train(args: argparse.Namespace) -> R4RRTrainResult:
         base_lr=args.base_lr,
         classifier_lr=args.classifier_lr,
         lr2_mult=args.lr2_mult,
+        alignment_loss=args.alignment_loss,
         invalid_teacher_samples_seen=invalid_seen,
         aligned_teacher_samples_seen=aligned_seen,
     )
@@ -501,6 +524,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--base-lr", type=float, required=True)
     parser.add_argument("--classifier-lr", type=float, required=True)
     parser.add_argument("--lr2-mult", type=float, required=True)
+    parser.add_argument(
+        "--alignment-loss",
+        choices=ALIGNMENT_LOSSES,
+        default="forward_kl",
+    )
     parser.add_argument("--momentum", type=float, default=0.9)
     parser.add_argument("--weight-decay", type=float, default=1e-5)
     parser.add_argument("--nesterov", action="store_true")

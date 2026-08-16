@@ -420,3 +420,16 @@ including maps made empty by augmentation, remain classification-only samples.
 The three-day job persists its Optuna SQLite study and per-trial CSV under
 `logsImageNet9/sweeps/r4rr/main/`; resubmitting the same command continues until
 50 trials have completed.
+
+To run the four fixed-loss alignment ablations with the same maps, objective,
+training setup, and five-dimensional search space, submit:
+
+```bash
+bash ImageNet9_Runs/submit_imagenet9_r4rr_alignment_sweeps.sh
+```
+
+This creates one independent 50-trial study for each of `reverse_kl`,
+`jensen_shannon`, `squared_l2`, and `cosine`. Outputs are isolated under
+`logsImageNet9/sweeps/r4rr_<loss>/main/`. Each job has a three-day walltime and
+is resumable by rerunning the same submitter; completed trials remain in that
+loss's SQLite study.

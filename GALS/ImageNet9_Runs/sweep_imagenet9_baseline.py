@@ -20,6 +20,13 @@ NON_TEACHER_METHODS = ("erm", "upweight", "abn", "elrep")
 METHODS = NON_TEACHER_METHODS + ("gals", "gals_gradcam", "gals_abn", "r4rr")
 OBJECTIVE_NAME = "val_macro_class_accuracy"
 RESULT_PREFIX = "[RESULT] "
+R4RR_ALIGNMENT_LOSSES = (
+    "forward_kl",
+    "reverse_kl",
+    "jensen_shannon",
+    "squared_l2",
+    "cosine",
+)
 
 
 SEARCH_SPACES: Mapping[str, Mapping[str, object]] = {
@@ -104,6 +111,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--gals-map-root", type=Path)
     parser.add_argument("--teacher-map-root", type=Path)
     parser.add_argument("--teacher-map-audit", type=Path)
+    parser.add_argument(
+        "--alignment-loss",
+        choices=R4RR_ALIGNMENT_LOSSES,
+        default="forward_kl",
+    )
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--trainer", type=Path, default=Path(__file__).with_name("train_imagenet9_baseline.py"))
     parser.add_argument("--no-enqueue-default", action="store_true")
@@ -131,7 +143,7 @@ def _contract(args: argparse.Namespace) -> Dict[str, object]:
         contract["r4rr_teacher_maps"] = _validate_r4rr_maps(args)
         contract["trainer"] = str(args.trainer.resolve())
         contract["trainer_sha256"] = _sha256(args.trainer)
-        contract["alignment_loss"] = "forward_kl"
+        contract["alignment_loss"] = args.alignment_loss
         contract["kl_increment_policy"] = "kl_lambda/10_per_align_epoch"
         contract["invalid_teacher_policy"] = "classification_only"
         contract["joint_image_mask_augmentation"] = True
@@ -306,6 +318,7 @@ def _trainer_command(args: argparse.Namespace, params: Mapping[str, object]) -> 
             "--base-lr", str(params["base_lr"]),
             "--classifier-lr", str(params["classifier_lr"]),
             "--lr2-mult", str(params["lr2_mult"]),
+            "--alignment-loss", args.alignment_loss,
             "--momentum", str(params["momentum"]),
             "--weight-decay", str(args.weight_decay),
             "--device", args.device,
@@ -397,6 +410,12 @@ def _run_trial(trial, args: argparse.Namespace) -> float:
     trial.set_user_attr("best_val_per_class_accuracy", result["best_val_per_class_accuracy"])
     trial.set_user_attr("class_weights", result.get("class_weights", []))
     if args.method == "r4rr":
+        if result["alignment_loss"] != args.alignment_loss:
+            raise RuntimeError(
+                f"Trainer returned alignment_loss={result['alignment_loss']!r}; "
+                f"expected {args.alignment_loss!r}"
+            )
+        trial.set_user_attr("alignment_loss", result["alignment_loss"])
         trial.set_user_attr(
             "invalid_teacher_samples_seen",
             int(result["invalid_teacher_samples_seen"]),
@@ -418,7 +437,7 @@ def _write_study_csv(study, path: Path) -> None:
     import optuna
 
     fieldnames = [
-        "trial", "state", "objective", "attention_epoch", "kl_lambda",
+        "trial", "state", "objective", "alignment_loss", "attention_epoch", "kl_lambda",
         "base_lr", "classifier_lr", "lr2_mult", "momentum",
         "abn_cls_weight", "abn_att_weight", "theta1", "theta2", "grad_weight",
         "grad_criterion", "cam_weight",
@@ -434,6 +453,9 @@ def _write_study_csv(study, path: Path) -> None:
                 "trial": trial.number,
                 "state": trial.state.name,
                 "objective": trial.value if trial.state == optuna.trial.TrialState.COMPLETE else "",
+                "alignment_loss": trial.user_attrs.get(
+                    "alignment_loss", study.user_attrs.get("alignment_loss", "")
+                ),
                 "attention_epoch": trial.params.get("attention_epoch", ""),
                 "kl_lambda": trial.params.get("kl_lambda", ""),
                 "base_lr": trial.params.get("base_lr", ""),
@@ -542,6 +564,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         study.set_user_attr("contract_sha256", contract_digest)
         study.set_user_attr("contract", contract)
         study.set_user_attr("fixed_momentum", args.fixed_momentum)
+        if args.method == "r4rr":
+            study.set_user_attr("alignment_loss", args.alignment_loss)
         if not args.no_enqueue_default and not study.get_trials(deepcopy=False):
             study.enqueue_trial(_default_trial(args.method))
 

@@ -16,6 +16,7 @@ from PIL import Image
 import sweep_imagenet9_baseline as sweep
 from audit_imagenet9_r4rr_weclip_maps import voc_colormap
 from train_imagenet9_r4rr import (
+    ALIGNMENT_LOSSES,
     decode_target_mask,
     joint_train_transform,
     r4rr_alignment_loss,
@@ -95,6 +96,17 @@ class ImageNet9R4RRSweepTests(unittest.TestCase):
         loss.backward()
         self.assertEqual(float(cams.grad.abs().sum()), 0.0)
 
+    def test_all_registered_alignment_losses_are_finite_with_invalid_map_filtering(self):
+        for loss_name in ALIGNMENT_LOSSES:
+            cams = torch.randn(3, 4, 4, requires_grad=True)
+            masks = torch.rand(3, 12, 12)
+            masks[2].zero_()
+            loss, valid = r4rr_alignment_loss(cams, masks, loss_name)
+            self.assertEqual(valid.tolist(), [True, True, False])
+            self.assertTrue(bool(torch.isfinite(loss)))
+            loss.backward()
+            self.assertEqual(float(cams.grad[2].abs().sum()), 0.0)
+
     def test_registered_search_space_matches_r4rr_protocol(self):
         self.assertEqual(
             sweep.SEARCH_SPACES["r4rr"],
@@ -123,6 +135,7 @@ class ImageNet9R4RRSweepTests(unittest.TestCase):
                 trainer=root / "train_imagenet9_r4rr.py",
                 manifest=root / "manifest.csv",
                 teacher_map_root=root / "maps",
+                alignment_loss="jensen_shannon",
                 train_seed=0,
                 epochs=20,
                 batch_size=96,
@@ -136,6 +149,7 @@ class ImageNet9R4RRSweepTests(unittest.TestCase):
         self.assertIn("--attention-epoch", command)
         self.assertIn("--kl-lambda", command)
         self.assertIn("--lr2-mult", command)
+        self.assertEqual(command[command.index("--alignment-loss") + 1], "jensen_shannon")
         self.assertNotIn("--teacher-map-audit", command)
 
 
