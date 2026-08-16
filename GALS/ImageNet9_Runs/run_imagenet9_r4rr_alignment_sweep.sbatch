@@ -3,7 +3,7 @@
 #SBATCH --account=reu-aisocial
 #SBATCH --partition=tier3
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=3-00:00:00
+#SBATCH --time=1-20:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
@@ -33,7 +33,7 @@ BATCH_SIZE="${BATCH_SIZE:-96}"
 NUM_WORKERS="${NUM_WORKERS:-${SLURM_CPUS_PER_TASK:-8}}"
 SWEEP_SEED="${SWEEP_SEED:-0}"
 TRAIN_SEED="${TRAIN_SEED:-0}"
-MAX_HOURS="${MAX_HOURS:-70}"
+MAX_HOURS="${MAX_HOURS:-42}"
 PYTHON_BIN="${PYTHON_BIN:-/home/ryreu/miniconda3/envs/gals_a100/bin/python}"
 
 mkdir -p "$LOG_ROOT" "$RUN_ROOT/trials"
@@ -62,7 +62,7 @@ echo "Run root: $RUN_ROOT"
 echo "Study: imagenet9_r4rr_${ALIGNMENT_LOSS}_${RUN_TAG}"
 echo "Target completed trials: $TARGET_COMPLETE_TRIALS"
 echo "Epochs: $EPOCHS batch_size=$BATCH_SIZE workers=$NUM_WORKERS"
-echo "Maximum driver runtime: $MAX_HOURS hours (Slurm walltime: 3 days)"
+echo "Maximum driver runtime: $MAX_HOURS hours (Slurm walltime: 1 day 20 hours)"
 echo "Objective: Original validation macro class accuracy"
 echo "Ranges: attention_epoch={0..19} kl_lambda=[1,500] base_lr=[1e-5,5e-2] classifier_lr=[1e-5,5e-2] lr2_mult=[0.1,3]"
 echo "Fixed: alignment_loss=$ALIGNMENT_LOSS kl_increment=kl_lambda/10/epoch momentum=0.9 weight_decay=1e-5"
