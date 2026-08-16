@@ -12,7 +12,12 @@ import torch
 
 import sweep_imagenet9_baseline as sweep
 import generate_imagenet9_gals_vit_maps as map_generator
-from train_imagenet9_baseline import combine_gals_attention, ground_truth_gradcam
+from train_imagenet9_baseline import (
+    combine_gals_attention,
+    ground_truth_gradcam,
+    masked_gals_gradient_penalty,
+    masked_l1_loss,
+)
 
 
 class FakeTrial:
@@ -78,6 +83,29 @@ class ImageNet9GALSTests(unittest.TestCase):
         combined, valid = combine_gals_attention(torch.zeros(1, 2, 1, 7, 7))
         self.assertEqual(valid.tolist(), [False])
         self.assertEqual(int(torch.count_nonzero(combined)), 0)
+
+    def test_gradient_penalty_excludes_invalid_teacher_samples(self):
+        gradients = torch.ones(2, 3, 2, 2, requires_grad=True)
+        teacher = torch.zeros(2, 1, 2, 2)
+        teacher[0, :, 0, 0] = 1.0
+        valid = torch.tensor([True, False])
+
+        penalty = masked_gals_gradient_penalty(gradients, teacher, valid, "L1")
+        penalty.backward()
+
+        self.assertGreater(float(gradients.grad[0].abs().sum()), 0.0)
+        self.assertEqual(float(gradients.grad[1].abs().sum()), 0.0)
+
+    def test_masked_l1_all_invalid_is_differentiable_zero(self):
+        prediction = torch.randn(2, 1, 3, 3, requires_grad=True)
+        loss = masked_l1_loss(
+            prediction,
+            torch.zeros_like(prediction),
+            torch.tensor([False, False]),
+        )
+        self.assertEqual(float(loss), 0.0)
+        loss.backward()
+        self.assertEqual(float(prediction.grad.abs().sum()), 0.0)
 
     def test_gals_search_includes_categorical_criterion(self):
         trial = FakeTrial()

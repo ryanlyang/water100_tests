@@ -106,6 +106,34 @@ def combine_gals_attention(attention: torch.Tensor) -> Tuple[torch.Tensor, torch
     return normalized.view_as(combined), valid_samples
 
 
+def masked_gals_gradient_penalty(
+    input_gradient: torch.Tensor,
+    teacher: torch.Tensor,
+    valid: torch.Tensor,
+    criterion: str,
+) -> torch.Tensor:
+    """Penalize gradients only where a nonzero teacher map is available."""
+    if not bool(valid.any()):
+        return input_gradient.sum() * 0.0
+    outside_gradient = input_gradient[valid] * (1.0 - teacher[valid])
+    if criterion == "L1":
+        return outside_gradient.abs().mean()
+    if criterion == "L2":
+        return outside_gradient.square().mean()
+    raise ValueError(f"Unknown gradient criterion: {criterion}")
+
+
+def masked_l1_loss(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    valid: torch.Tensor,
+) -> torch.Tensor:
+    """Mean L1 over valid teacher samples, or differentiable zero if none."""
+    if not bool(valid.any()):
+        return prediction.sum() * 0.0
+    return F.l1_loss(prediction[valid], target[valid])
+
+
 def ground_truth_gradcam(
     feature_maps: torch.Tensor,
     logits: torch.Tensor,
@@ -499,6 +527,8 @@ def train(args: argparse.Namespace) -> TrainResult:
         model.train()
         train_loss_sum = 0.0
         train_count = 0
+        teacher_valid_count = 0
+        teacher_invalid_count = 0
         for batch in train_loader:
             images = batch["image"].to(device, non_blocking=True)
             targets = batch["label"].to(device, non_blocking=True)
@@ -517,18 +547,17 @@ def train(args: argparse.Namespace) -> TrainResult:
                     teacher, valid = combine_gals_attention(
                         batch["attention"].to(device, non_blocking=True)
                     )
-                    if not bool(valid.all()):
-                        invalid = int((~valid).sum().item())
-                        raise RuntimeError(
-                            f"GALS ABN batch contains {invalid} all-zero teacher maps"
-                        )
+                    teacher_valid_count += int(valid.sum().item())
+                    teacher_invalid_count += int((~valid).sum().item())
                     teacher = F.interpolate(
                         teacher,
                         size=features.shape[-2:],
                         mode="bilinear",
                         align_corners=False,
                     )
-                    attention_loss = F.l1_loss(features, features * teacher)
+                    attention_loss = masked_l1_loss(
+                        features, features * teacher, valid
+                    )
                     loss = loss + args.abn_att_weight * attention_loss
             elif args.method == "elrep":
                 if features is None:
@@ -538,22 +567,20 @@ def train(args: argparse.Namespace) -> TrainResult:
                 teacher, valid = combine_gals_attention(
                     batch["attention"].to(device, non_blocking=True)
                 )
-                if not bool(valid.all()):
-                    invalid = int((~valid).sum().item())
-                    raise RuntimeError(f"GALS batch contains {invalid} all-zero teacher maps")
-                input_gradient = torch.autograd.grad(
-                    loss,
-                    images,
-                    retain_graph=True,
-                    create_graph=True,
-                )[0]
-                outside_gradient = input_gradient * (1.0 - teacher)
-                if args.grad_criterion == "L1":
-                    gradient_loss = outside_gradient.abs().mean()
-                elif args.grad_criterion == "L2":
-                    gradient_loss = outside_gradient.square().mean()
+                teacher_valid_count += int(valid.sum().item())
+                teacher_invalid_count += int((~valid).sum().item())
+                if bool(valid.any()):
+                    input_gradient = torch.autograd.grad(
+                        loss,
+                        images,
+                        retain_graph=True,
+                        create_graph=True,
+                    )[0]
+                    gradient_loss = masked_gals_gradient_penalty(
+                        input_gradient, teacher, valid, args.grad_criterion
+                    )
                 else:
-                    raise ValueError(f"Unknown gradient criterion: {args.grad_criterion}")
+                    gradient_loss = loss * 0.0
                 loss = loss + args.grad_weight * gradient_loss
             elif args.method == "gals_gradcam":
                 if features is None:
@@ -561,11 +588,8 @@ def train(args: argparse.Namespace) -> TrainResult:
                 teacher, valid = combine_gals_attention(
                     batch["attention"].to(device, non_blocking=True)
                 )
-                if not bool(valid.all()):
-                    invalid = int((~valid).sum().item())
-                    raise RuntimeError(
-                        f"GALS Grad-CAM batch contains {invalid} all-zero teacher maps"
-                    )
+                teacher_valid_count += int(valid.sum().item())
+                teacher_invalid_count += int((~valid).sum().item())
                 gradcam = ground_truth_gradcam(features, logits, targets)
                 teacher = F.interpolate(
                     teacher,
@@ -573,7 +597,7 @@ def train(args: argparse.Namespace) -> TrainResult:
                     mode="bilinear",
                     align_corners=False,
                 )
-                cam_loss = F.l1_loss(gradcam, teacher)
+                cam_loss = masked_l1_loss(gradcam, teacher, valid)
                 loss = loss + args.cam_weight * cam_loss
             loss.backward()
             optimizer.step()
@@ -612,6 +636,7 @@ def train(args: argparse.Namespace) -> TrainResult:
             f"train_loss={train_loss_sum / max(train_count, 1):.6f} "
             f"val_loss={val_loss_sum / max(val_count, 1):.6f} "
             f"val_acc={accuracy:.6f} val_macro={macro:.6f} best_macro={best_macro:.6f}",
+            f"teacher_valid={teacher_valid_count} teacher_invalid={teacher_invalid_count}",
             flush=True,
         )
 

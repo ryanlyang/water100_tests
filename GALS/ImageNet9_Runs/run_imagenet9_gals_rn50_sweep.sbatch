@@ -57,6 +57,7 @@ echo "Epochs: $EPOCHS batch_size=$BATCH_SIZE workers=$NUM_WORKERS"
 echo "Maximum driver runtime: $MAX_HOURS hours (Slurm walltime: 1 day 16 hours)"
 echo "Objective: Original validation macro class accuracy"
 echo "Ranges: base_lr=[1e-5,5e-2] classifier_lr=[1e-5,5e-2] grad_weight=[1e3,1e5] criterion={L1,L2}"
+echo "All-zero teacher maps: classification-only; RRR penalty uses nonzero maps only"
 echo "Official Backgrounds Challenge variants used for tuning: NO"
 "$PYTHON_BIN" --version
 
