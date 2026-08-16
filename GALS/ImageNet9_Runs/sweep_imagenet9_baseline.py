@@ -17,7 +17,7 @@ from typing import Dict, List, Mapping, Optional, Sequence
 
 
 NON_TEACHER_METHODS = ("erm", "upweight", "abn", "elrep")
-METHODS = NON_TEACHER_METHODS + ("gals", "gals_gradcam", "gals_abn")
+METHODS = NON_TEACHER_METHODS + ("gals", "gals_gradcam", "gals_abn", "r4rr")
 OBJECTIVE_NAME = "val_macro_class_accuracy"
 RESULT_PREFIX = "[RESULT] "
 
@@ -59,6 +59,13 @@ SEARCH_SPACES: Mapping[str, Mapping[str, object]] = {
         "classifier_lr": (1e-4, 1e-2, "log"),
         "abn_att_weight": (1e-2, 1e2, "log"),
     },
+    "r4rr": {
+        "attention_epoch": (0, 19, "int"),
+        "kl_lambda": (1.0, 500.0, "log"),
+        "base_lr": (1e-5, 5e-2, "log"),
+        "classifier_lr": (1e-5, 5e-2, "log"),
+        "lr2_mult": (1e-1, 3.0, "log"),
+    },
 }
 
 
@@ -95,6 +102,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--abn-checkpoint", type=Path)
     parser.add_argument("--gals-map-root", type=Path)
+    parser.add_argument("--teacher-map-root", type=Path)
+    parser.add_argument("--teacher-map-audit", type=Path)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--trainer", type=Path, default=Path(__file__).with_name("train_imagenet9_baseline.py"))
     parser.add_argument("--no-enqueue-default", action="store_true")
@@ -116,6 +125,16 @@ def _contract(args: argparse.Namespace) -> Dict[str, object]:
     }
     if args.method in {"gals", "gals_gradcam", "gals_abn"}:
         contract["gals_maps"] = _validate_gals_maps(args)
+    if args.method == "r4rr":
+        if args.epochs != 20:
+            raise ValueError("The registered R4RR attention_epoch space 0..19 requires 20 epochs")
+        contract["r4rr_teacher_maps"] = _validate_r4rr_maps(args)
+        contract["trainer"] = str(args.trainer.resolve())
+        contract["trainer_sha256"] = _sha256(args.trainer)
+        contract["alignment_loss"] = "forward_kl"
+        contract["kl_increment_policy"] = "kl_lambda/10_per_align_epoch"
+        contract["invalid_teacher_policy"] = "classification_only"
+        contract["joint_image_mask_augmentation"] = True
     return contract
 
 
@@ -152,6 +171,52 @@ def _validate_gals_maps(args: argparse.Namespace) -> Dict[str, object]:
     }
 
 
+def _validate_r4rr_maps(args: argparse.Namespace) -> Dict[str, object]:
+    if args.teacher_map_root is None or args.teacher_map_audit is None:
+        raise ValueError("R4RR requires --teacher-map-root and --teacher-map-audit")
+    inference_contract_path = args.teacher_map_root.parent / "inference_contract.json"
+    if not inference_contract_path.is_file():
+        raise FileNotFoundError(inference_contract_path)
+    if not args.teacher_map_audit.is_file():
+        raise FileNotFoundError(args.teacher_map_audit)
+    inference = json.loads(inference_contract_path.read_text())
+    audit = json.loads(args.teacher_map_audit.read_text())
+    if inference.get("dataset") != "imagenet9_backgrounds_challenge":
+        raise RuntimeError(f"Unexpected R4RR teacher dataset: {inference.get('dataset')}")
+    if inference.get("num_source_images") != 45405:
+        raise RuntimeError("R4RR inference contract does not cover 45,405 training images")
+    if inference.get("official_validation_used") or inference.get("official_test_variants_used"):
+        raise RuntimeError("R4RR teacher inference contract indicates held-out data leakage")
+    required_audit = {
+        "status": "ok",
+        "expected_maps": 45405,
+        "valid_maps": 45405,
+        "missing_maps": 0,
+        "extra_maps": 0,
+    }
+    for key, expected in required_audit.items():
+        if audit.get(key) != expected:
+            raise RuntimeError(
+                f"R4RR map audit mismatch for {key}: {audit.get(key)!r} != {expected!r}"
+            )
+    if Path(str(audit.get("map_root", ""))).resolve() != args.teacher_map_root.resolve():
+        raise RuntimeError("R4RR map audit points to a different teacher-map directory")
+    map_count = sum(1 for _ in args.teacher_map_root.glob("*.png"))
+    if map_count != 45405:
+        raise RuntimeError(f"Expected 45,405 R4RR maps, found {map_count}")
+    return {
+        "root": str(args.teacher_map_root.resolve()),
+        "map_count": map_count,
+        "empty_expected_foreground_maps": audit.get("empty_expected_foreground_maps"),
+        "empty_expected_foreground_rate": audit.get("empty_expected_foreground_rate"),
+        "inference_contract_sha256": _sha256(inference_contract_path),
+        "audit_sha256": _sha256(args.teacher_map_audit),
+        "model": inference.get("model"),
+        "clip_model": inference.get("clip_model"),
+        "dino_model": inference.get("dino_model"),
+    }
+
+
 def _contract_hash(contract: Mapping[str, object]) -> str:
     encoded = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
@@ -163,6 +228,8 @@ def _suggest(trial, method: str, fixed_momentum: float) -> Dict[str, object]:
         low, high, scale = specification
         if scale == "categorical":
             params[name] = trial.suggest_categorical(name, list(specification[:-1]))
+        elif scale == "int":
+            params[name] = int(trial.suggest_int(name, int(low), int(high)))
         else:
             params[name] = float(
                 trial.suggest_float(name, float(low), float(high), log=(scale == "log"))
@@ -175,6 +242,9 @@ def _suggest(trial, method: str, fixed_momentum: float) -> Dict[str, object]:
     params.setdefault("grad_criterion", "L1")
     params.setdefault("cam_weight", 1.0)
     params.setdefault("abn_att_weight", 1.0)
+    params.setdefault("attention_epoch", 0)
+    params.setdefault("kl_lambda", 0.0)
+    params.setdefault("lr2_mult", 1.0)
     return params
 
 
@@ -205,11 +275,42 @@ def _default_trial(method: str) -> Dict[str, object]:
             "classifier_lr": 1e-3,
             "abn_att_weight": 1.0,
         },
+        "r4rr": {
+            "attention_epoch": 10,
+            "kl_lambda": 10.0,
+            "base_lr": 1e-3,
+            "classifier_lr": 1e-3,
+            "lr2_mult": 1.0,
+        },
     }
     return defaults[method]
 
 
 def _trainer_command(args: argparse.Namespace, params: Mapping[str, object]) -> List[str]:
+    if args.method == "r4rr":
+        if args.teacher_map_root is None:
+            raise ValueError("R4RR sweep requires --teacher-map-root")
+        return [
+            args.python,
+            "-u",
+            str(args.trainer),
+            "--method", "r4rr",
+            "--manifest", str(args.manifest),
+            "--teacher-map-root", str(args.teacher_map_root),
+            "--seed", str(args.train_seed),
+            "--epochs", str(args.epochs),
+            "--batch-size", str(args.batch_size),
+            "--num-workers", str(args.num_workers),
+            "--attention-epoch", str(params["attention_epoch"]),
+            "--kl-lambda", str(params["kl_lambda"]),
+            "--base-lr", str(params["base_lr"]),
+            "--classifier-lr", str(params["classifier_lr"]),
+            "--lr2-mult", str(params["lr2_mult"]),
+            "--momentum", str(params["momentum"]),
+            "--weight-decay", str(args.weight_decay),
+            "--device", args.device,
+            "--skip-file-checks",
+        ]
     command = [
         args.python,
         "-u",
@@ -294,7 +395,16 @@ def _run_trial(trial, args: argparse.Namespace) -> float:
     trial.set_user_attr("best_epoch", int(result["best_epoch"]))
     trial.set_user_attr("best_val_accuracy", float(result["best_val_accuracy"]))
     trial.set_user_attr("best_val_per_class_accuracy", result["best_val_per_class_accuracy"])
-    trial.set_user_attr("class_weights", result["class_weights"])
+    trial.set_user_attr("class_weights", result.get("class_weights", []))
+    if args.method == "r4rr":
+        trial.set_user_attr(
+            "invalid_teacher_samples_seen",
+            int(result["invalid_teacher_samples_seen"]),
+        )
+        trial.set_user_attr(
+            "aligned_teacher_samples_seen",
+            int(result["aligned_teacher_samples_seen"]),
+        )
     print(
         f"[TRIAL {trial.number}] complete objective={objective:.6f} "
         f"best_epoch={result['best_epoch']} seconds={seconds:.1f} params={params}",
@@ -308,11 +418,14 @@ def _write_study_csv(study, path: Path) -> None:
     import optuna
 
     fieldnames = [
-        "trial", "state", "objective", "base_lr", "classifier_lr", "momentum",
+        "trial", "state", "objective", "attention_epoch", "kl_lambda",
+        "base_lr", "classifier_lr", "lr2_mult", "momentum",
         "abn_cls_weight", "abn_att_weight", "theta1", "theta2", "grad_weight",
         "grad_criterion", "cam_weight",
         "best_epoch", "best_val_accuracy",
-        "best_val_per_class_accuracy", "class_weights", "seconds", "log_path",
+        "best_val_per_class_accuracy", "class_weights",
+        "invalid_teacher_samples_seen", "aligned_teacher_samples_seen",
+        "seconds", "log_path",
     ]
     rows = []
     for trial in study.get_trials(deepcopy=False):
@@ -321,8 +434,11 @@ def _write_study_csv(study, path: Path) -> None:
                 "trial": trial.number,
                 "state": trial.state.name,
                 "objective": trial.value if trial.state == optuna.trial.TrialState.COMPLETE else "",
+                "attention_epoch": trial.params.get("attention_epoch", ""),
+                "kl_lambda": trial.params.get("kl_lambda", ""),
                 "base_lr": trial.params.get("base_lr", ""),
                 "classifier_lr": trial.params.get("classifier_lr", ""),
+                "lr2_mult": trial.params.get("lr2_mult", ""),
                 "momentum": trial.params.get("momentum", study.user_attrs.get("fixed_momentum", "")),
                 "abn_cls_weight": trial.params.get("abn_cls_weight", ""),
                 "abn_att_weight": trial.params.get("abn_att_weight", ""),
@@ -335,6 +451,12 @@ def _write_study_csv(study, path: Path) -> None:
                 "best_val_accuracy": trial.user_attrs.get("best_val_accuracy", ""),
                 "best_val_per_class_accuracy": json.dumps(trial.user_attrs.get("best_val_per_class_accuracy", [])),
                 "class_weights": json.dumps(trial.user_attrs.get("class_weights", [])),
+                "invalid_teacher_samples_seen": trial.user_attrs.get(
+                    "invalid_teacher_samples_seen", ""
+                ),
+                "aligned_teacher_samples_seen": trial.user_attrs.get(
+                    "aligned_teacher_samples_seen", ""
+                ),
                 "seconds": trial.user_attrs.get("seconds", ""),
                 "log_path": trial.user_attrs.get("log_path", ""),
             }

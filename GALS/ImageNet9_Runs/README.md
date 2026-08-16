@@ -403,3 +403,20 @@ wrong-sized, and unknown-color maps, and confirms that no validation or
 official test data entered the inference contract. It also reports expected
 foreground, background, unexpected-class, and empty-map rates globally and by
 class under `inference/full/audit/`.
+
+After the full map audit reports `status: ok`, launch the 50-trial R4RR sweep:
+
+```bash
+sbatch ImageNet9_Runs/run_imagenet9_r4rr_sweep.sbatch
+```
+
+The sweep uses the established R4RR space: `attention_epoch` in `0..19`,
+log-scaled `kl_lambda` in `[1,500]`, `base_lr` and `classifier_lr` in
+`[1e-5,5e-2]`, and log-scaled `lr2_mult` in `[0.1,3]`. Training uses 20 epochs,
+an ImageNet-pretrained ResNet-50 student, forward KL, and Original validation
+macro class accuracy for selection. The image crop and horizontal flip are
+applied jointly to each teacher mask. Maps with no target-class foreground,
+including maps made empty by augmentation, remain classification-only samples.
+The three-day job persists its Optuna SQLite study and per-trial CSV under
+`logsImageNet9/sweeps/r4rr/main/`; resubmitting the same command continues until
+50 trials have completed.
