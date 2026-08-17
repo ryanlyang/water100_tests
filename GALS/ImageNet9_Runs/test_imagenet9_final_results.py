@@ -155,6 +155,14 @@ class ImageNet9FinalResultTests(unittest.TestCase):
                 selection["best_params"]["classifier_lr"],
                 0.006215096340440499,
             )
+            args.kl_increment = 0.0
+            zero_increment = load_r4rr_selection(args)
+            self.assertEqual(
+                zero_increment["result_method"],
+                "r4rr_forward_kl_trial13_klincr0",
+            )
+            self.assertEqual(zero_increment["final_kl_increment_override"], 0.0)
+            self.assertEqual(zero_increment["fixed"]["kl_increment"], 0.0)
 
 
 if __name__ == "__main__":

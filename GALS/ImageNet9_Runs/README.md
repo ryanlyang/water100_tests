@@ -173,6 +173,17 @@ sbatch --job-name=in9ft_r4rr_t13 \
   ImageNet9_Runs/run_imagenet9_final_teacher_5seed.sbatch
 ```
 
+To transfer every ramp-selected R4RR configuration, including trial 13, to a
+fixed `kl_increment=0` final retraining schedule, run:
+
+```bash
+bash ImageNet9_Runs/submit_imagenet9_final_r4rr_klincr0_5seed.sh
+```
+
+These exploratory results use separate `<variant>_klincr0` directories. Their
+contracts record both the sweep's `kl_lambda/10` increment policy and the final
+zero-increment override; they do not overwrite the schedule-matched finals.
+
 ## CLIP ViT zero-shot Backgrounds Challenge evaluation
 
 The following test-only job evaluates ViT-B/16 and ViT-B/32 through the same

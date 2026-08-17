@@ -35,6 +35,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         type=int,
         help="Evaluate this completed sweep trial instead of the validation winner.",
     )
+    parser.add_argument(
+        "--kl-increment",
+        type=float,
+        help=(
+            "Override the sweep's KL-increment policy during final retraining. "
+            "When omitted, reproduce the sweep policy kl_lambda/10."
+        ),
+    )
     parser.add_argument("--sweep-summary", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--teacher-map-root", type=Path, required=True)
@@ -120,6 +128,15 @@ def load_selection(args: argparse.Namespace) -> Dict[str, object]:
             "lr2_mult": float(row["lr2_mult"]),
         }
         result_method = f"r4rr_{args.alignment_loss}_trial{trial_number}"
+    kl_increment_override = getattr(args, "kl_increment", None)
+    if kl_increment_override is not None:
+        if kl_increment_override < 0:
+            raise ValueError("--kl-increment must be nonnegative")
+        if kl_increment_override == 0:
+            result_method += "_klincr0"
+        else:
+            suffix = format(kl_increment_override, ".9g").replace("-", "m").replace(".", "p")
+            result_method += f"_klincr{suffix}"
     return {
         "method": "r4rr",
         "result_method": result_method,
@@ -131,6 +148,8 @@ def load_selection(args: argparse.Namespace) -> Dict[str, object]:
         "selected_trial": selected_trial,
         "selected_value": selected_value,
         "best_params": selected_params,
+        "sweep_kl_increment_policy": contract.get("kl_increment_policy"),
+        "final_kl_increment_override": kl_increment_override,
         "teacher_map_root": str(args.teacher_map_root.resolve()),
         "fixed": {
             "epochs": args.epochs,
@@ -139,7 +158,11 @@ def load_selection(args: argparse.Namespace) -> Dict[str, object]:
             "momentum": contract.get("fixed_momentum", 0.9),
             "nesterov": False,
             "pretrained": True,
-            "kl_increment": "kl_lambda/10_per_align_epoch",
+            "kl_increment": (
+                kl_increment_override
+                if kl_increment_override is not None
+                else "kl_lambda/10_per_align_epoch"
+            ),
         },
         "official_variants_used_for_selection": False,
     }
@@ -188,6 +211,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "--device", args.device,
                 "--skip-file-checks",
             ]
+            if args.kl_increment is not None:
+                command.extend(["--kl-increment", str(args.kl_increment)])
             run_logged(command, seed_root / "training.log")
             atomic_json(training_json, parse_training_result(seed_root / "training.log"))
         else:
@@ -198,6 +223,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             raise RuntimeError(f"Stored R4RR training result does not match seed {seed}")
         if training.get("alignment_loss") != args.alignment_loss:
             raise RuntimeError(f"Stored R4RR alignment loss does not match seed {seed}")
+        expected_increment = (
+            float(params["kl_lambda"]) / 10.0
+            if args.kl_increment is None
+            else float(args.kl_increment)
+        )
+        if abs(float(training.get("kl_increment", -1.0)) - expected_increment) > 1e-12:
+            raise RuntimeError(f"Stored R4RR KL increment does not match seed {seed}")
         if Path(str(training.get("checkpoint", ""))).resolve() != checkpoint.resolve():
             raise RuntimeError(f"Stored checkpoint path does not match {checkpoint}")
 

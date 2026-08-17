@@ -30,6 +30,7 @@ PYTHON_BIN="${PYTHON_BIN:-/home/ryreu/miniconda3/envs/gals_a100/bin/python}"
 NUM_WORKERS="${NUM_WORKERS:-${SLURM_CPUS_PER_TASK:-8}}"
 ABN_CHECKPOINT="${ABN_CHECKPOINT:-}"
 R4RR_MAP_ROOT="${R4RR_MAP_ROOT:-${DATA_ROOT}/r4rr_teacher/weclipplus_clip_dino_v1/inference/full/val/prediction_cmap}"
+KL_INCREMENT="${KL_INCREMENT:-}"
 VIT_MAP_ROOT="${VIT_MAP_ROOT:-${DATA_ROOT}/gals_maps/clip_vit_b32_transformer_v1}"
 RN50_MAP_ROOT="${RN50_MAP_ROOT:-${DATA_ROOT}/gals_maps/clip_rn50_gradcam_v1}"
 
@@ -88,7 +89,17 @@ case "$VARIANT" in
 esac
 
 SWEEP_ROOT="${SWEEP_ROOT:-${LOG_ROOT}/sweeps/${SWEEP_DIR}/main}"
-FINAL_ROOT="${FINAL_ROOT:-${LOG_ROOT}/final/${VARIANT}/main}"
+OUTPUT_VARIANT="$VARIANT"
+if [[ "$METHOD" == "r4rr" && -n "$KL_INCREMENT" ]]; then
+  if [[ "$KL_INCREMENT" == "0" || "$KL_INCREMENT" == "0.0" ]]; then
+    OUTPUT_VARIANT="${VARIANT}_klincr0"
+  else
+    safe_increment="${KL_INCREMENT//-/m}"
+    safe_increment="${safe_increment//./p}"
+    OUTPUT_VARIANT="${VARIANT}_klincr${safe_increment}"
+  fi
+fi
+FINAL_ROOT="${FINAL_ROOT:-${LOG_ROOT}/final/${OUTPUT_VARIANT}/main}"
 mkdir -p "$LOG_ROOT" "$FINAL_ROOT"
 cd "$REPO"
 
@@ -107,6 +118,7 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:128
 
 echo "[$(date)] Host: $(hostname)"
 echo "Variant: $VARIANT"
+echo "Output variant: $OUTPUT_VARIANT"
 echo "Seeds: $SEEDS"
 echo "Sweep root: $SWEEP_ROOT"
 echo "Final root: $FINAL_ROOT"
@@ -134,6 +146,9 @@ if [[ "$METHOD" == "r4rr" ]]; then
   R4RR_EXTRA=()
   if [[ -n "${TRIAL_NUMBER:-}" ]]; then
     R4RR_EXTRA+=(--trial-number "$TRIAL_NUMBER")
+  fi
+  if [[ -n "$KL_INCREMENT" ]]; then
+    R4RR_EXTRA+=(--kl-increment "$KL_INCREMENT")
   fi
   srun --unbuffered "$PYTHON_BIN" -u \
     ImageNet9_Runs/run_imagenet9_final_r4rr.py \
