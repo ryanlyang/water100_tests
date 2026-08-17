@@ -3,7 +3,7 @@
 #SBATCH --account=reu-aisocial
 #SBATCH --partition=tier3
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=3-00:00:00
+#SBATCH --time=6-00:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
@@ -26,8 +26,8 @@ BATCH_SIZE="${BATCH_SIZE:-96}"
 NUM_WORKERS="${NUM_WORKERS:-${SLURM_CPUS_PER_TASK:-8}}"
 SWEEP_SEED="${SWEEP_SEED:-0}"
 TRAIN_SEED="${TRAIN_SEED:-0}"
-# Stop admitting trials two hours before Slurm's three-day deadline.
-MAX_HOURS="${MAX_HOURS:-70}"
+# Stop admitting trials two hours before Slurm's six-day deadline.
+MAX_HOURS="${MAX_HOURS:-142}"
 PYTHON_BIN="${PYTHON_BIN:-/home/ryreu/miniconda3/envs/gals_a100/bin/python}"
 
 mkdir -p "$LOG_ROOT" "$RUN_ROOT/trials"
@@ -54,7 +54,7 @@ echo "Run root: $RUN_ROOT"
 echo "Study: imagenet9_gals_${RUN_TAG}"
 echo "Target completed trials: $TARGET_COMPLETE_TRIALS"
 echo "Epochs: $EPOCHS batch_size=$BATCH_SIZE workers=$NUM_WORKERS"
-echo "Maximum driver runtime: $MAX_HOURS hours (Slurm walltime: 3 days)"
+echo "Maximum driver runtime: $MAX_HOURS hours (Slurm walltime: 6 days)"
 echo "Objective: Original validation macro class accuracy"
 echo "Ranges: base_lr=[1e-5,5e-2] classifier_lr=[1e-5,5e-2] grad_weight=[1e3,1e5] criterion={L1,L2}"
 echo "Official Backgrounds Challenge variants used for tuning: NO"

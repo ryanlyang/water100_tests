@@ -159,7 +159,19 @@ studies, and launches one resumable job per complete variant. Re-running it
 later picks up newly completed GALS studies and skips final variants already at
 five seeds. Stable results are written under
 `logsImageNet9/final/<variant>/main/` using the same per-seed and population
-mean/std format as the non-teacher methods.
+mean/std format as the non-teacher methods. Each job has a 12-hour walltime and
+can be resubmitted to continue from completed seed artifacts.
+
+For the explicitly exploratory five-seed evaluation of completed forward-KL
+trial 13, use the same runner with an isolated variant name. Its parameters are
+loaded and verified directly from the sweep's `trials.csv`, and its results do
+not replace the validation-selected R4RR final:
+
+```bash
+sbatch --job-name=in9ft_r4rr_t13 \
+  --export=ALL,VARIANT=r4rr_trial13 \
+  ImageNet9_Runs/run_imagenet9_final_teacher_5seed.sbatch
+```
 
 ## CLIP ViT zero-shot Backgrounds Challenge evaluation
 
@@ -263,8 +275,8 @@ completed Optuna trials. It sweeps `base_lr` and `classifier_lr` over
 `[1e-5, 5e-2]` (log), `grad_weight` over `[1e3, 1e5]` (log), and
 `grad_criterion` over `{L1,L2}`. ResNet-50 initialization, SGD momentum 0.9,
 weight decay `1e-5`, 20 epochs, and the GALS `average_nonzero`/
-`suppress_outside` mechanics are fixed. The Slurm walltime is three days and
-the driver stops admitting trials after 70 hours. Re-submit the same command
+`suppress_outside` mechanics are fixed. The Slurm walltime is six days and
+the driver stops admitting trials after 142 hours. Re-submit the same command
 to continue the stable `imagenet9_gals_main` SQLite study until 50 trials have
 completed; validation and official Backgrounds Challenge variants are never
 used as teacher-map inputs or robustness-selection targets.

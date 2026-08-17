@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from pathlib import Path
@@ -29,6 +30,11 @@ ALIGNMENT_LOSSES = (
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--alignment-loss", choices=ALIGNMENT_LOSSES, required=True)
+    parser.add_argument(
+        "--trial-number",
+        type=int,
+        help="Evaluate this completed sweep trial instead of the validation winner.",
+    )
     parser.add_argument("--sweep-summary", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--teacher-map-root", type=Path, required=True)
@@ -72,14 +78,59 @@ def load_selection(args: argparse.Namespace) -> Dict[str, object]:
             f"Teacher root differs from sweep contract: "
             f"{args.teacher_map_root.resolve()} != {selected_root}"
         )
+    trial_number = getattr(args, "trial_number", None)
+    if trial_number is None:
+        selection_mode = "validation_best"
+        selected_trial = int(summary["best_trial"])
+        selected_value = float(summary["best_value"])
+        selected_params = dict(summary["best_params"])
+        result_method = f"r4rr_{args.alignment_loss}"
+    else:
+        trials_path = args.sweep_summary.with_name("trials.csv")
+        if not trials_path.is_file():
+            raise FileNotFoundError(trials_path)
+        with trials_path.open(newline="") as handle:
+            matches = [
+                row
+                for row in csv.DictReader(handle)
+                if int(row["trial"]) == trial_number
+            ]
+        if len(matches) != 1:
+            raise RuntimeError(
+                f"Expected one row for trial {trial_number}, found {len(matches)}"
+            )
+        row = matches[0]
+        if row["state"] != "COMPLETE":
+            raise RuntimeError(
+                f"Requested trial {trial_number} is not complete: {row['state']}"
+            )
+        if row["alignment_loss"] != args.alignment_loss:
+            raise RuntimeError(
+                f"Trial {trial_number} alignment mismatch: "
+                f"{row['alignment_loss']} != {args.alignment_loss}"
+            )
+        selection_mode = "fixed_completed_trial"
+        selected_trial = trial_number
+        selected_value = float(row["objective"])
+        selected_params = {
+            "attention_epoch": int(row["attention_epoch"]),
+            "kl_lambda": float(row["kl_lambda"]),
+            "base_lr": float(row["base_lr"]),
+            "classifier_lr": float(row["classifier_lr"]),
+            "lr2_mult": float(row["lr2_mult"]),
+        }
+        result_method = f"r4rr_{args.alignment_loss}_trial{trial_number}"
     return {
         "method": "r4rr",
-        "result_method": f"r4rr_{args.alignment_loss}",
+        "result_method": result_method,
         "alignment_loss": args.alignment_loss,
+        "selection_mode": selection_mode,
         "source_summary": str(args.sweep_summary.resolve()),
-        "best_trial": summary["best_trial"],
-        "best_value": summary["best_value"],
-        "best_params": dict(summary["best_params"]),
+        "sweep_best_trial": summary["best_trial"],
+        "sweep_best_value": summary["best_value"],
+        "selected_trial": selected_trial,
+        "selected_value": selected_value,
+        "best_params": selected_params,
         "teacher_map_root": str(args.teacher_map_root.resolve()),
         "fixed": {
             "epochs": args.epochs,

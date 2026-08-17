@@ -3,7 +3,7 @@
 #SBATCH --account=reu-aisocial
 #SBATCH --partition=tier3
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=1-12:00:00
+#SBATCH --time=12:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
@@ -12,9 +12,9 @@
 
 set -Eeuo pipefail
 
-VARIANT="${VARIANT:?Submit with VARIANT=gals|gals_gradcam|gals_abn|gals_rn50|r4rr|r4rr_reverse_kl|r4rr_jensen_shannon|r4rr_squared_l2|r4rr_cosine}"
+VARIANT="${VARIANT:?Submit with a registered GALS or R4RR final variant}"
 case "$VARIANT" in
-  gals|gals_gradcam|gals_abn|gals_rn50|r4rr|r4rr_reverse_kl|r4rr_jensen_shannon|r4rr_squared_l2|r4rr_cosine) ;;
+  gals|gals_gradcam|gals_abn|gals_rn50|r4rr|r4rr_trial13|r4rr_reverse_kl|r4rr_jensen_shannon|r4rr_squared_l2|r4rr_cosine) ;;
   *) echo "[ERROR] Unsupported VARIANT=$VARIANT" >&2; exit 2 ;;
 esac
 
@@ -58,6 +58,12 @@ case "$VARIANT" in
     METHOD="r4rr"
     SWEEP_DIR="r4rr"
     ALIGNMENT_LOSS="forward_kl"
+    ;;
+  r4rr_trial13)
+    METHOD="r4rr"
+    SWEEP_DIR="r4rr"
+    ALIGNMENT_LOSS="forward_kl"
+    TRIAL_NUMBER=13
     ;;
   r4rr_reverse_kl)
     METHOD="r4rr"
@@ -125,10 +131,15 @@ COMMON=(
 )
 
 if [[ "$METHOD" == "r4rr" ]]; then
+  R4RR_EXTRA=()
+  if [[ -n "${TRIAL_NUMBER:-}" ]]; then
+    R4RR_EXTRA+=(--trial-number "$TRIAL_NUMBER")
+  fi
   srun --unbuffered "$PYTHON_BIN" -u \
     ImageNet9_Runs/run_imagenet9_final_r4rr.py \
     --alignment-loss "$ALIGNMENT_LOSS" \
     --teacher-map-root "$R4RR_MAP_ROOT" \
+    "${R4RR_EXTRA[@]}" \
     "${COMMON[@]}"
 else
   EXTRA=(--method "$METHOD" --gals-map-root "$MAP_ROOT")
