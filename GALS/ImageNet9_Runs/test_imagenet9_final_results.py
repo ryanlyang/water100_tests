@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 import csv
+import argparse
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from imagenet9_final_utils import ALL_VARIANTS, evaluation_to_row, write_method_tables
+from run_imagenet9_final_r4rr import load_selection as load_r4rr_selection
 
 
 def evaluation(seed, mixed_same, mixed_rand):
@@ -55,6 +57,51 @@ class ImageNet9FinalResultTests(unittest.TestCase):
             summary = json.loads((root / "summary.json").read_text())
             self.assertEqual(summary["seeds"], [0, 1])
             self.assertEqual(summary["standard_deviation"], "population")
+
+    def test_r4rr_final_selection_locks_loss_and_teacher_root(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            teacher_root = root / "teacher"
+            teacher_root.mkdir()
+            summary_path = root / "summary.json"
+            summary_path.write_text(
+                json.dumps(
+                    {
+                        "method": "r4rr",
+                        "complete_trials": 50,
+                        "target_complete_trials": 50,
+                        "objective": "val_macro_class_accuracy",
+                        "official_variants_used_for_selection": False,
+                        "best_trial": 7,
+                        "best_value": 0.9,
+                        "best_params": {
+                            "attention_epoch": 10,
+                            "kl_lambda": 2.0,
+                            "base_lr": 1e-3,
+                            "classifier_lr": 2e-3,
+                            "lr2_mult": 0.5,
+                        },
+                        "contract": {
+                            "alignment_loss": "cosine",
+                            "r4rr_teacher_maps": {"root": str(teacher_root)},
+                            "weight_decay": 1e-5,
+                            "fixed_momentum": 0.9,
+                        },
+                    }
+                )
+            )
+            args = argparse.Namespace(
+                sweep_summary=summary_path,
+                alignment_loss="cosine",
+                teacher_map_root=teacher_root,
+                epochs=20,
+                batch_size=96,
+            )
+            selection = load_r4rr_selection(args)
+            self.assertEqual(selection["result_method"], "r4rr_cosine")
+            args.alignment_loss = "forward_kl"
+            with self.assertRaisesRegex(RuntimeError, "Alignment mismatch"):
+                load_r4rr_selection(args)
 
 
 if __name__ == "__main__":

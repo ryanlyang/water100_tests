@@ -60,15 +60,17 @@ def load_model(args: argparse.Namespace, device: torch.device):
         model.fc.load_state_dict(classifier["model_state_dict"], strict=True)
         return model.to(device), lambda images: model(images)
 
+    checkpoint_method = "r4rr" if args.method.startswith("r4rr") else args.method
     stored_method = checkpoint.get("method")
-    if stored_method != args.method:
+    if stored_method != checkpoint_method:
         raise RuntimeError(
-            f"Checkpoint method mismatch: requested={args.method} stored={stored_method}"
+            f"Checkpoint method mismatch: requested={checkpoint_method} stored={stored_method}"
         )
-    model, _ = build_model(args.method, pretrained=False)
+    model_method = "erm" if checkpoint_method == "r4rr" else checkpoint_method
+    model, _ = build_model(model_method, pretrained=False)
     model.load_state_dict(checkpoint["model_state_dict"], strict=True)
     model.to(device)
-    return model, lambda images: _forward(args.method, model, images)[0]
+    return model, lambda images: _forward(model_method, model, images)[0]
 
 
 @torch.no_grad()

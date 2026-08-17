@@ -147,6 +147,20 @@ results and `summary.csv` contains their mean and population standard
 deviation. BG-Gap is computed as Mixed-Same minus Mixed-Rand within each seed
 before aggregation. Re-running the submitter safely resumes incomplete jobs.
 
+After teacher-method sweeps reach 50 completed trials, submit their locked
+five-seed evaluations with:
+
+```bash
+bash ImageNet9_Runs/submit_imagenet9_final_teacher_5seed.sh
+```
+
+The submitter checks every GALS and R4RR sweep summary, skips incomplete
+studies, and launches one resumable job per complete variant. Re-running it
+later picks up newly completed GALS studies and skips final variants already at
+five seeds. Stable results are written under
+`logsImageNet9/final/<variant>/main/` using the same per-seed and population
+mean/std format as the non-teacher methods.
+
 ## CLIP ViT zero-shot Backgrounds Challenge evaluation
 
 The following test-only job evaluates ViT-B/16 and ViT-B/32 through the same

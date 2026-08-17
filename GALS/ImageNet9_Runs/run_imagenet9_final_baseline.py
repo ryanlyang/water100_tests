@@ -14,7 +14,16 @@ from typing import Dict, List, Mapping, Optional, Sequence
 from imagenet9_final_utils import atomic_json, parse_seeds, write_method_tables
 
 
-METHODS = ("erm", "upweight", "abn", "elrep")
+METHODS = (
+    "erm",
+    "upweight",
+    "abn",
+    "elrep",
+    "gals",
+    "gals_gradcam",
+    "gals_abn",
+)
+GALS_METHODS = ("gals", "gals_gradcam", "gals_abn")
 RESULT_PREFIX = "[RESULT] "
 
 
@@ -32,6 +41,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--eval-batch-size", type=int, default=256)
     parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--abn-checkpoint", type=Path)
+    parser.add_argument("--gals-map-root", type=Path)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--python", default=sys.executable)
     return parser.parse_args(argv)
@@ -86,6 +96,22 @@ def load_selection(args: argparse.Namespace) -> Dict[str, object]:
     params.setdefault("abn_cls_weight", 1.0)
     params.setdefault("theta1", 1e-4)
     params.setdefault("theta2", 1e-5)
+    params.setdefault("grad_weight", 1e4)
+    params.setdefault("grad_criterion", "L1")
+    params.setdefault("cam_weight", 1.0)
+    params.setdefault("abn_att_weight", 1.0)
+    gals_maps = contract.get("gals_maps")
+    if args.method in GALS_METHODS:
+        if not isinstance(gals_maps, Mapping) or not gals_maps.get("root"):
+            raise RuntimeError("Completed GALS sweep has no teacher-map contract")
+        selected_map_root = Path(str(gals_maps["root"])).resolve()
+        if args.gals_map_root is None:
+            args.gals_map_root = selected_map_root
+        elif args.gals_map_root.resolve() != selected_map_root:
+            raise RuntimeError(
+                f"GALS map root differs from sweep contract: "
+                f"{args.gals_map_root.resolve()} != {selected_map_root}"
+            )
     return {
         "method": args.method,
         "source_summary": str(args.sweep_summary.resolve()),
@@ -100,6 +126,9 @@ def load_selection(args: argparse.Namespace) -> Dict[str, object]:
             "pretrained": True,
         },
         "official_variants_used_for_selection": False,
+        "gals_map_root": (
+            str(args.gals_map_root.resolve()) if args.gals_map_root else None
+        ),
     }
 
 
@@ -167,10 +196,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 args.device,
                 "--skip-file-checks",
             ]
-            if args.method == "abn":
+            if args.method in {"abn", "gals_abn"}:
                 if args.abn_checkpoint is None or not args.abn_checkpoint.is_file():
                     raise FileNotFoundError(args.abn_checkpoint)
                 command.extend(["--abn-checkpoint", str(args.abn_checkpoint)])
+            if args.method in GALS_METHODS:
+                if args.gals_map_root is None or not args.gals_map_root.is_dir():
+                    raise FileNotFoundError(args.gals_map_root)
+                command.extend(["--gals-map-root", str(args.gals_map_root)])
+                if args.method == "gals":
+                    command.extend(
+                        [
+                            "--grad-weight",
+                            str(params["grad_weight"]),
+                            "--grad-criterion",
+                            str(params["grad_criterion"]),
+                        ]
+                    )
+                elif args.method == "gals_gradcam":
+                    command.extend(["--cam-weight", str(params["cam_weight"])])
+                else:
+                    command.extend(
+                        ["--abn-att-weight", str(params["abn_att_weight"])]
+                    )
             run_logged(command, training_log)
             atomic_json(training_json, parse_training_result(training_log))
         else:
