@@ -485,3 +485,37 @@ This creates one independent 50-trial study for each of `reverse_kl`,
 `logsImageNet9/sweeps/r4rr_<loss>/main/`. Each job has a 44-hour walltime and
 is resumable by rerunning the same submitter; completed trials remain in that
 loss's SQLite study.
+
+## Waterbirds-95 hyperparameter transfer
+
+The cross-dataset transfer study uses the validation-selected Waterbirds-95
+hyperparameters without retuning them on ImageNet-9. Standard 200-epoch
+Waterbirds training exposes the model to `200 * 4,795 = 959,000` images; the
+nearest ImageNet-9 schedule is 21 epochs, or `21 * 45,405 = 953,505` images.
+R4RR therefore transfers attention epoch 109 to epoch 12 and uses its original
+constant forward-KL weight (`kl_increment=0`). ImageNet-9 validation macro
+accuracy is used only to select a checkpoint within each training run. The
+official Backgrounds Challenge variants remain evaluation-only.
+
+Submit one resumable five-seed job for each trained method with:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+bash ImageNet9_Runs/submit_imagenet9_wb95_transfer_5seed.sh
+```
+
+This launches ERM, Upweight, ABN, ElRep, the WB95-selected GALS RRR variant
+with ImageNet-9 ViT teacher maps, AFR, CLIP-LR, and R4RR. AFR transfers its
+fixed `gamma=11` and `reg_coeff=0`; its 50-epoch source stage-one exposure is
+matched by seven epochs over ImageNet-9's 80% stage-one subset. CLIP-LR
+transfers `C=30.481669...` and does not have an epoch schedule. The complete
+contract is in `configs/waterbirds95_hparam_transfer.yaml`, and results are
+written under `logsImageNet9/transfer/waterbirds95/<method>/main/`.
+
+After all eight jobs finish, verify five seeds per method and create one
+comparison CSV with:
+
+```bash
+python ImageNet9_Runs/summarize_imagenet9_wb95_transfer.py \
+  --run-root /home/ryreu/guided_cnn/logsImageNet9/transfer/waterbirds95
+```

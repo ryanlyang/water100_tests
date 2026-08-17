@@ -50,6 +50,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--max-hours", type=float, default=94.0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument(
+        "--fixed-gamma",
+        type=float,
+        help="Run only this prespecified AFR gamma instead of the native grid.",
+    )
+    parser.add_argument(
+        "--fixed-reg-coeff",
+        type=float,
+        help="Run only this prespecified AFR regularization coefficient.",
+    )
     return parser.parse_args(argv)
 
 
@@ -313,6 +323,12 @@ def _run_stage2_configuration(
     return result
 
 
+def _target_configurations(args) -> int:
+    if args.fixed_gamma is not None:
+        return 1
+    return 1 if args.smoke else 165
+
+
 def _write_summary(results: List[Dict[str, object]], args) -> None:
     fieldnames = [
         "gamma", "reg_coeff", "best_epoch", "best_val_accuracy",
@@ -337,7 +353,12 @@ def _write_summary(results: List[Dict[str, object]], args) -> None:
         "stage1_train_fraction": args.stage1_prop,
         "stage2_train_fraction": 1.0 - args.stage1_prop,
         "completed_stage2_configurations": len(results),
-        "target_stage2_configurations": 1 if args.smoke else 165,
+        "target_stage2_configurations": _target_configurations(args),
+        "selection_mode": (
+            "prespecified_fixed_configuration"
+            if args.fixed_gamma is not None
+            else "validation_selected_grid"
+        ),
         "best": best,
     }
     path = args.run_root / "summary.json"
@@ -348,6 +369,10 @@ def _write_summary(results: List[Dict[str, object]], args) -> None:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
+    if (args.fixed_gamma is None) != (args.fixed_reg_coeff is None):
+        raise ValueError("--fixed-gamma and --fixed-reg-coeff must be provided together")
+    if args.fixed_gamma is not None and args.smoke:
+        raise ValueError("Fixed AFR configuration and --smoke are mutually exclusive")
     args.run_root.mkdir(parents=True, exist_ok=True)
     if not args.manifest.is_file():
         raise FileNotFoundError(args.manifest)
@@ -366,6 +391,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "stage2_lr": args.stage2_lr,
         "batch_size": args.batch_size,
         "smoke": args.smoke,
+        "fixed_gamma": args.fixed_gamma,
+        "fixed_reg_coeff": args.fixed_reg_coeff,
         "objective": "val_macro_class_accuracy",
         "official_variants_used": False,
     }
@@ -405,8 +432,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for key, value in cache.items()
     }
 
-    configurations = [(4.0 + 0.5 * index, reg) for index in range(33) for reg in (0.0, 0.1, 0.2, 0.3, 0.4)]
-    if args.smoke:
+    configurations = [
+        (4.0 + 0.5 * index, reg)
+        for index in range(33)
+        for reg in (0.0, 0.1, 0.2, 0.3, 0.4)
+    ]
+    if args.fixed_gamma is not None:
+        configurations = [(args.fixed_gamma, args.fixed_reg_coeff)]
+    elif args.smoke:
         configurations = [(4.0, 0.0)]
     result_dir = args.run_root / "stage2"
     result_dir.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,92 @@
+# Cross-dataset hyperparameter transfer from Waterbirds-95 to ImageNet-9.
+#
+# No ImageNet-9 validation result is used to choose these hyperparameters.
+# ImageNet-9 validation macro accuracy is used only for checkpoint selection.
+experiment:
+  name: waterbirds95_hparam_transfer
+  source_dataset: waterbirds95
+  source_train_images: 4795
+  source_standard_epochs: 200
+  target_dataset: imagenet9
+  target_train_images: 45405
+  target_standard_epochs: 21
+  target_batch_size: 96
+  target_standard_exposures: 953505
+  source_standard_exposures: 959000
+  checkpoint_objective: val_macro_class_accuracy
+  official_variants_used_for_hparam_selection: false
+
+fixed:
+  pretrained: true
+  weight_decay: 1.0e-5
+  momentum: 0.9
+  nesterov: false
+
+methods:
+  erm:
+    trainer: erm
+    base_lr: 0.010670285966035751
+    classifier_lr: 0.0005167213151701126
+    momentum: 0.9187602995212563
+
+  upweight:
+    trainer: upweight
+    base_lr: 0.013011143106374497
+    classifier_lr: 0.00034233257609501744
+
+  abn:
+    trainer: abn
+    base_lr: 0.01003187525820913
+    classifier_lr: 7.25437836215674e-05
+    abn_cls_weight: 2.617728751833586
+
+  elrep:
+    trainer: elrep
+    base_lr: 0.019630442695504173
+    classifier_lr: 7.267191608584487e-05
+    theta1: 3.332582224436613e-05
+    theta2: 1.8101732764960995e-05
+
+  gals:
+    trainer: gals
+    teacher_maps: clip_vit_b32_transformer_v1
+    base_lr: 0.008483345748827318
+    classifier_lr: 0.0009044122656322206
+    grad_weight: 13680.095279726915
+    grad_criterion: L1
+
+  afr:
+    trainer: afr
+    gamma: 11.0
+    reg_coeff: 0.0
+    source_stage1_epochs: 50
+    target_stage1_fraction: 0.8
+    target_stage1_epochs: 7
+    stage1_lr: 0.003
+    stage1_weight_decay: 1.0e-4
+    stage1_momentum: 0.9
+    stage2_epochs: 500
+    stage2_lr: 0.01
+    split_seed: 21
+
+  clip_lr:
+    trainer: clip_lr
+    c: 30.481669053249504
+    model: openai_clip_RN50
+    solver: lbfgs
+    penalty: l2
+    fit_intercept: true
+    tol: 1.0e-4
+    max_iter: 2000
+
+  r4rr:
+    trainer: r4rr
+    teacher_maps: weclipplus_clip_dino_v1
+    source_attention_epoch: 109
+    attention_epoch: 12
+    alignment_loss: forward_kl
+    kl_lambda: 295.30
+    kl_increment: 0.0
+    base_lr: 4.82e-5
+    classifier_lr: 2.93e-3
+    lr2_mult: 0.409
