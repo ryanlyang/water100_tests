@@ -519,3 +519,27 @@ comparison CSV with:
 python ImageNet9_Runs/summarize_imagenet9_wb95_transfer.py \
   --run-root /home/ryreu/guided_cnn/logsImageNet9/transfer/waterbirds95
 ```
+
+### Alignment-loss transfer
+
+The four alternative R4RR losses can be transferred under the same protocol.
+Each job resolves its completed 50-trial Waterbirds-95 sweep CSV, selects the
+WB95 validation winner, scales that trial's attention epoch by cumulative image
+exposure, and trains ImageNet-9 for 21 epochs with `kl_increment=0`. The source
+CSV path, SHA-256, winning trial, source parameters, and transferred parameters
+are frozen in the run contract. Submit all four five-seed studies with:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+bash ImageNet9_Runs/submit_imagenet9_wb95_alignment_transfer_5seed.sh
+```
+
+This launches reverse KL, Jensen--Shannon, squared L2, and cosine as four
+independent resumable 18-hour jobs. Results are written under
+`logsImageNet9/transfer/waterbirds95_alignment/<loss>/main/`. After completion,
+compare them with the existing forward-KL transfer using:
+
+```bash
+python ImageNet9_Runs/summarize_imagenet9_wb95_alignment_transfer.py \
+  --transfer-root /home/ryreu/guided_cnn/logsImageNet9/transfer
+```
