@@ -543,3 +543,46 @@ compare them with the existing forward-KL transfer using:
 python ImageNet9_Runs/summarize_imagenet9_wb95_alignment_transfer.py \
   --transfer-root /home/ryreu/guided_cnn/logsImageNet9/transfer
 ```
+
+## WB95-transfer RISE Pointing Game
+
+The official Backgrounds Challenge release includes 4,050 binary foreground
+masks under `fg_mask/val`. The localization protocol applies the model's native
+evaluation crop jointly to each image/mask pair, targets the ground-truth class,
+and uses one shared deterministic bank of 2,000 GALS-style RISE masks. The
+primary evaluation is the official `original` test variant.
+
+Submit one resumable job per method and seed (40 jobs) with:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+bash ImageNet9_Runs/submit_imagenet9_wb95_transfer_rise.sh
+```
+
+The submitter first audits all 4,050 image/mask joins and native dimensions.
+Each GPU job appends completed image batches to a contract-locked JSONL file,
+so resubmission continues interrupted evaluations. Results are stored under
+`logsImageNet9/pointing_game_rise_wb95_transfer/`.
+
+The same foreground masks can be audited and evaluated on the three composited
+variants with:
+
+```bash
+VARIANTS="mixed_same mixed_rand mixed_next" \
+  bash ImageNet9_Runs/submit_imagenet9_wb95_transfer_rise.sh
+```
+
+Aggregate the primary five-seed results after all jobs finish:
+
+```bash
+python ImageNet9_Runs/summarize_imagenet9_wb95_transfer_rise.py \
+  --run-root /home/ryreu/guided_cnn/logsImageNet9/pointing_game_rise_wb95_transfer \
+  --variants original
+```
+
+For all four variants, pass
+`--variants original,mixed_same,mixed_rand,mixed_next`. The summary reports
+overall, macro-class, and worst-class Pointing Game accuracy, the foreground
+area random baseline, classification accuracy, and saliency mass inside the
+foreground. Standard deviations are population standard deviations over the
+five training seeds.
