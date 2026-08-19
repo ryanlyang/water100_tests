@@ -15,9 +15,9 @@
 
 set -Eeuo pipefail
 
-CONDITION="${CONDITION:?Submit with CONDITION=digit_0|...|digit_9|random_10pct}"
+CONDITION="${CONDITION:?Submit with CONDITION=clean|digit_0|...|digit_9|random_10pct}"
 case "$CONDITION" in
-  digit_[0-9]|random_10pct) ;;
+  clean|digit_[0-9]|random_10pct) ;;
   *) echo "[ERROR] Unsupported CONDITION=$CONDITION" >&2; exit 2 ;;
 esac
 
@@ -106,4 +106,3 @@ fi
 
 echo "[DONE] condition=$CONDITION"
 echo "[DONE] summary=$RUN_ROOT/$CONDITION/summary.csv"
-

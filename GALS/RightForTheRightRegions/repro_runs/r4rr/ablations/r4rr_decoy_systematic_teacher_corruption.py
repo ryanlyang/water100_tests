@@ -36,7 +36,7 @@ import r4rr_decoy_fixed as decoy_core  # noqa: E402
 
 
 PROTOCOL_VERSION = 1
-CONDITIONS = tuple([f"digit_{digit}" for digit in range(10)] + ["random_10pct"])
+CONDITIONS = tuple(["clean", "random_10pct"] + [f"digit_{digit}" for digit in range(10)])
 DEFAULT_SEEDS = (0, 1, 2, 3, 4)
 FIXED_EPOCHS = 19
 FIXED_WEIGHT_DECAY = 1e-4
@@ -172,7 +172,9 @@ def select_corruption_indices(
         raise ValueError(f"Unknown condition {condition!r}; expected one of {CONDITIONS}")
 
     train_indices_array = np.asarray(train_indices, dtype=np.int64)
-    if condition.startswith("digit_"):
+    if condition == "clean":
+        selected = []
+    elif condition.startswith("digit_"):
         digit = int(condition.split("_", 1)[1])
         class_key = str(digit)
         if class_key not in class_to_idx:
@@ -193,7 +195,7 @@ def select_corruption_indices(
         selected = rng.choice(train_indices_array, size=sample_count, replace=False).tolist()
 
     selected_array = np.asarray(sorted(int(index) for index in selected), dtype=np.int64)
-    if selected_array.size == 0:
+    if selected_array.size == 0 and condition != "clean":
         raise RuntimeError(f"Condition {condition} selected no training examples")
     if np.unique(selected_array).size != selected_array.size:
         raise RuntimeError(f"Condition {condition} produced duplicate indices")
@@ -243,11 +245,17 @@ def build_manifest(
         )
 
     target_digit = int(condition.split("_", 1)[1]) if condition.startswith("digit_") else None
+    if condition == "clean":
+        condition_type = "clean_control"
+    elif target_digit is not None:
+        condition_type = "systematic_class"
+    else:
+        condition_type = "random_control"
     manifest: Dict[str, object] = {
         "protocol_version": PROTOCOL_VERSION,
         "dataset": "decoymnist",
         "condition": condition,
-        "condition_type": "systematic_class" if target_digit is not None else "random_control",
+        "condition_type": condition_type,
         "target_digit": target_digit,
         "corruption_operation": "one_minus_then_sum_renormalize",
         "corruption_seed": int(corruption_seed),

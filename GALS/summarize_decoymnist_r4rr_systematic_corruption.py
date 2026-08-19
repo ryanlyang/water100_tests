@@ -8,7 +8,9 @@ import os
 from pathlib import Path
 
 
-CONDITIONS = tuple(["random_10pct"] + [f"digit_{digit}" for digit in range(10)])
+CORRUPTION_CONDITIONS = tuple(
+    ["random_10pct"] + [f"digit_{digit}" for digit in range(10)]
+)
 
 
 def atomic_write_csv(path, fieldnames, rows):
@@ -25,12 +27,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-root", required=True, type=Path)
     parser.add_argument("--allow-incomplete", action="store_true")
+    parser.add_argument(
+        "--include-clean",
+        action="store_true",
+        help="Require and include the clean surrogate-map sanity condition.",
+    )
     args = parser.parse_args()
     run_root = args.run_root.expanduser().resolve()
+    conditions = (("clean",) + CORRUPTION_CONDITIONS) if args.include_clean else CORRUPTION_CONDITIONS
 
     rows = []
     missing = []
-    for condition in CONDITIONS:
+    for condition in conditions:
         path = run_root / condition / "summary.json"
         if not path.is_file():
             missing.append(condition)
@@ -68,7 +76,7 @@ def main():
     atomic_write_csv(output_csv, fieldnames, rows)
 
     per_seed_rows = []
-    for condition in CONDITIONS:
+    for condition in conditions:
         path = run_root / condition / "per_seed_metrics.csv"
         if not path.is_file():
             continue

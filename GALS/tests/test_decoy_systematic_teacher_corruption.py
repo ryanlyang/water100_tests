@@ -33,6 +33,19 @@ def test_systematic_condition_selects_only_requested_digit():
     assert all(targets[index] == 3 for index in selected.tolist())
 
 
+def test_clean_control_selects_no_corrupted_examples():
+    selected = MODULE.select_corruption_indices(
+        condition="clean",
+        sample_targets=[index % 10 for index in range(100)],
+        train_indices=list(range(10, 100)),
+        class_to_idx={str(digit): digit for digit in range(10)},
+        corruption_seed=0,
+    )
+
+    assert selected.dtype == np.int64
+    assert selected.size == 0
+
+
 def test_random_control_is_exactly_ten_percent_and_reproducible():
     targets = [index % 10 for index in range(1000)]
     train_indices = list(range(100, 1000))
@@ -68,4 +81,3 @@ def test_inversion_uses_uniform_fallback_for_all_one_mask():
     observed = MODULE.invert_and_renormalize_mask(mask)
 
     assert torch.allclose(observed, torch.full_like(mask, 0.25))
-
