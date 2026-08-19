@@ -1,5 +1,5 @@
 #!/bin/bash
-# Train one Waterbirds-95 GALS seed, evaluate it with RISE, then discard the
+# Train one Waterbirds recovery seed, evaluate it with RISE, then discard the
 # temporary checkpoint only after the per-seed result has been validated.
 
 #SBATCH --account=reu-aisocial
@@ -21,16 +21,27 @@ case "$SEED" in
   *) echo "[ERROR] SEED must be one of 0,1,2,3,4 (got $SEED)" >&2; exit 2 ;;
 esac
 
+RECOVERY_DATASET="${RECOVERY_DATASET:?Submit with RECOVERY_DATASET=95|100}"
+RECOVERY_METHOD="${RECOVERY_METHOD:?Submit with RECOVERY_METHOD=gals|vanilla}"
+case "${RECOVERY_DATASET}:${RECOVERY_METHOD}" in
+  95:gals|100:vanilla) ;;
+  *)
+    echo "[ERROR] Supported recovery pairs are 95:gals and 100:vanilla" >&2
+    echo "[ERROR] Got ${RECOVERY_DATASET}:${RECOVERY_METHOD}" >&2
+    exit 2
+    ;;
+esac
+
 PROJECT_ROOT="${PROJECT_ROOT:-/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs}"
 GALS_ROOT="${GALS_ROOT:-$PROJECT_ROOT/GALS}"
 LOG_DIR="${LOG_DIR:-/home/ryreu/guided_cnn/logsWaterbird}"
 
 # Keep temporary training artifacts separate from the original CAM campaign.
-SOURCE_RUN_ROOT="${SOURCE_RUN_ROOT:-$LOG_DIR/pointing_game_recovery_sources_wb95_gals}"
+SOURCE_RUN_ROOT="${SOURCE_RUN_ROOT:-$LOG_DIR/pointing_game_recovery_sources_wb${RECOVERY_DATASET}_${RECOVERY_METHOD}}"
 RISE_RUN_ROOT="${RISE_RUN_ROOT:-$LOG_DIR/pointing_game_5seed_rise}"
-SOURCE_SEED_DIR="$SOURCE_RUN_ROOT/waterbirds_95/gals/seed_${SEED}"
+SOURCE_SEED_DIR="$SOURCE_RUN_ROOT/waterbirds_${RECOVERY_DATASET}/${RECOVERY_METHOD}/seed_${SEED}"
 SOURCE_MANIFEST="$SOURCE_SEED_DIR/training_manifest.json"
-RISE_SEED_DIR="$RISE_RUN_ROOT/waterbirds_95/gals/seed_${SEED}"
+RISE_SEED_DIR="$RISE_RUN_ROOT/waterbirds_${RECOVERY_DATASET}/${RECOVERY_METHOD}/seed_${SEED}"
 RISE_SUMMARY="$RISE_SEED_DIR/pointing_game/pointing_game_summary.csv"
 
 RISE_NUM_MASKS="${RISE_NUM_MASKS:-2000}"
@@ -48,18 +59,18 @@ RISE_WORKER="$GALS_ROOT/run_waterbirds_rise_pointing_game_5seed_method.sh"
 mkdir -p "$LOG_DIR" "$SOURCE_SEED_DIR" "$RISE_SEED_DIR"
 
 result_is_valid() {
-  python - "$RISE_SUMMARY" "$SEED" <<'PY'
+  python - "$RISE_SUMMARY" "$SEED" "$RECOVERY_DATASET" "$RECOVERY_METHOD" <<'PY'
 import csv
 import sys
 
-path, seed = sys.argv[1:]
+path, seed, dataset, method = sys.argv[1:]
 try:
     rows = list(csv.DictReader(open(path, newline="", encoding="utf-8")))
     row = rows[0] if len(rows) == 1 else None
     valid = (
         row is not None
-        and row.get("dataset") == "waterbirds_95"
-        and row.get("method") == "gals"
+        and row.get("dataset") == f"waterbirds_{dataset}"
+        and row.get("method") == method
         and int(row.get("seed", -1)) == int(seed)
         and row.get("split") == "test"
         and row.get("explainer") == "rise"
@@ -75,7 +86,7 @@ PY
 }
 
 echo "[$(date)] host=$(hostname) job=${SLURM_JOB_ID:-local}"
-echo "[RECOVERY] dataset=95 method=gals seed=$SEED"
+echo "[RECOVERY] dataset=$RECOVERY_DATASET method=$RECOVERY_METHOD seed=$SEED"
 echo "[RECOVERY] temporary_source=$SOURCE_SEED_DIR"
 echo "[RECOVERY] rise_output=$RISE_SEED_DIR"
 
@@ -86,8 +97,8 @@ if result_is_valid; then
   exit 0
 fi
 
-DATASET=95 \
-METHOD=gals \
+DATASET="$RECOVERY_DATASET" \
+METHOD="$RECOVERY_METHOD" \
 SEEDS_CSV="$SEED" \
 TRAIN_ONLY=1 \
 RUN_ROOT="$SOURCE_RUN_ROOT" \
@@ -99,8 +110,8 @@ if [[ ! -s "$SOURCE_MANIFEST" ]]; then
   exit 2
 fi
 
-DATASET=95 \
-METHOD=gals \
+DATASET="$RECOVERY_DATASET" \
+METHOD="$RECOVERY_METHOD" \
 SEEDS_CSV="$SEED" \
 CHECKPOINT_RUN_ROOT="$SOURCE_RUN_ROOT" \
 RUN_ROOT="$RISE_RUN_ROOT" \
@@ -123,13 +134,13 @@ fi
 cp "$SOURCE_MANIFEST" "$RISE_SEED_DIR/source_training_manifest.json"
 
 if [[ "$DELETE_CHECKPOINT_AFTER_RISE" == "1" ]]; then
-  checkpoint="$(python - "$SOURCE_MANIFEST" "$SEED" <<'PY'
+  checkpoint="$(python - "$SOURCE_MANIFEST" "$SEED" "$RECOVERY_DATASET" "$RECOVERY_METHOD" <<'PY'
 import json
 import sys
 
-path, seed = sys.argv[1:]
+path, seed, dataset, method = sys.argv[1:]
 obj = json.load(open(path, "r", encoding="utf-8"))
-if obj.get("dataset") != "95" or obj.get("method") != "gals" or int(obj.get("seed", -1)) != int(seed):
+if obj.get("dataset") != dataset or obj.get("method") != method or int(obj.get("seed", -1)) != int(seed):
     raise SystemExit("Refusing cleanup: manifest identity mismatch")
 print(obj["checkpoint"])
 PY

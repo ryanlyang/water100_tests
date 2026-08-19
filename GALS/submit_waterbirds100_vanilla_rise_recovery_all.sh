@@ -1,5 +1,5 @@
 #!/bin/bash
-# Submit five independent WB95 GALS train -> RISE -> cleanup recovery jobs.
+# Submit five independent WB100 vanilla train -> RISE -> cleanup recovery jobs.
 
 set -Eeuo pipefail
 
@@ -23,7 +23,6 @@ RISE_MASKS_PATH="${RISE_MASKS_PATH:-$RISE_RUN_ROOT/rise_masks/waterbirds_gals_N$
 [[ -f "$WORKER" ]] || { echo "[ERROR] Missing worker: $WORKER" >&2; exit 2; }
 mkdir -p "$LOG_DIR" "$RISE_RUN_ROOT" "$(dirname "$RISE_MASKS_PATH")"
 
-# Build/validate the deterministic shared bank once before parallel jobs start.
 if [[ "$DRY_RUN" != "1" ]]; then
   set +u
   source ~/miniconda3/etc/profile.d/conda.sh
@@ -42,12 +41,12 @@ fi
 export LOG_DIR RISE_RUN_ROOT RISE_NUM_MASKS RISE_GRID_SIZE RISE_P1 RISE_SEED
 export RISE_MASKS_PATH DELETE_CHECKPOINT_AFTER_RISE
 
-record="$RISE_RUN_ROOT/submitted_wb95_gals_recovery_$(date +%Y%m%d_%H%M%S).csv"
+record="$RISE_RUN_ROOT/submitted_wb100_vanilla_recovery_$(date +%Y%m%d_%H%M%S).csv"
 printf 'dataset,method,seed,job_id\n' > "$record"
 job_ids=()
 
 for seed in 0 1 2 3 4; do
-  job_name="pgr95g_s${seed}"
+  job_name="pgr100v_s${seed}"
   if [[ "$DRY_RUN" == "1" ]]; then
     echo "[DRY RUN] seed=$seed partition=$PARTITION time=$WALLTIME"
     job_id="DRY_RUN"
@@ -56,12 +55,12 @@ for seed in 0 1 2 3 4; do
       --partition="$PARTITION" \
       --time="$WALLTIME" \
       --job-name="$job_name" \
-      --export="ALL,SEED=$seed,RECOVERY_DATASET=95,RECOVERY_METHOD=gals" \
+      --export="ALL,SEED=$seed,RECOVERY_DATASET=100,RECOVERY_METHOD=vanilla" \
       "$WORKER")"
     job_ids+=("$job_id")
     echo "[SUBMITTED] seed=$seed job=$job_id"
   fi
-  printf '95,gals,%s,%s\n' "$seed" "$job_id" >> "$record"
+  printf '100,vanilla,%s,%s\n' "$seed" "$job_id" >> "$record"
 done
 
 echo
