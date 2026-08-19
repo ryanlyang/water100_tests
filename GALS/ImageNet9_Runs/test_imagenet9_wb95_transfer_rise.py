@@ -15,7 +15,12 @@ for path in (THIS_DIR, REPO_ROOT):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from imagenet9_pointing_game_utils import parse_progress_jsonl, resolve_foreground_mask
+from imagenet9_pointing_game_utils import (
+    POINTING_METHODS,
+    parse_progress_jsonl,
+    resolve_foreground_mask,
+    validate_source_contract,
+)
 from summarize_imagenet9_wb95_transfer_rise import summarize_method_variant
 
 
@@ -46,6 +51,28 @@ class ForegroundJoinTests(unittest.TestCase):
         }
         with self.assertRaises(RuntimeError):
             resolve_foreground_mask(row, {})
+
+
+class SourceContractTests(unittest.TestCase):
+    def test_clip_rn50_zero_shot_contract(self) -> None:
+        contract = {
+            "seed": 0,
+            "models": ["RN50"],
+            "weights": "openai",
+            "validation_or_tuning_data_used": False,
+        }
+        self.assertIn("clip_zs_rn50", POINTING_METHODS)
+        validate_source_contract("clip_zs_rn50", contract, seed=0)
+
+    def test_clip_zero_shot_rejects_tuning(self) -> None:
+        contract = {
+            "seed": 0,
+            "models": ["RN50"],
+            "weights": "openai",
+            "validation_or_tuning_data_used": True,
+        }
+        with self.assertRaises(RuntimeError):
+            validate_source_contract("clip_zs_rn50", contract, seed=0)
 
 
 class SummaryTests(unittest.TestCase):

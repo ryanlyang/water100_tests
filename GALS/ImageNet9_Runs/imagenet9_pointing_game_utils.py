@@ -11,7 +11,27 @@ from typing import Dict, List, Mapping, Sequence, Tuple
 
 
 METHODS = ("erm", "upweight", "abn", "elrep", "gals", "afr", "clip_lr", "r4rr")
+ZERO_SHOT_METHODS = ("clip_zs_rn50",)
+POINTING_METHODS = METHODS + ZERO_SHOT_METHODS
 PRIMARY_VARIANTS = ("original", "mixed_same", "mixed_rand", "mixed_next")
+
+
+def validate_source_contract(
+    method: str, evaluation: Mapping[str, object], seed: int
+) -> None:
+    if method not in POINTING_METHODS:
+        raise ValueError(f"Unsupported Pointing Game method: {method}")
+    if int(evaluation.get("seed", -1)) != seed:
+        raise RuntimeError("Evaluation JSON seed does not match requested seed")
+    if method == "clip_zs_rn50":
+        if evaluation.get("validation_or_tuning_data_used") is not False:
+            raise RuntimeError("CLIP-ZS source contract used validation or tuning data")
+        if evaluation.get("weights") != "openai" or "RN50" not in evaluation.get(
+            "models", []
+        ):
+            raise RuntimeError("CLIP-ZS source contract is not OpenAI RN50")
+    elif evaluation.get("official_variants_used_for_selection") is not False:
+        raise RuntimeError("Source evaluation does not certify held-out official variants")
 
 
 def write_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:

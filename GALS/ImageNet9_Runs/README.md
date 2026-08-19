@@ -587,6 +587,32 @@ area random baseline, classification accuracy, and saliency mass inside the
 foreground. Standard deviations are population standard deviations over the
 five training seeds.
 
+### CLIP RN50 zero-shot localization
+
+The frozen OpenAI CLIP RN50 zero-shot classifier can be evaluated with the
+same ground-truth-targeted RISE protocol on all four foreground-preserving
+variants. It uses the same prompt ensemble as the direct zero-shot
+classification evaluation and the same deterministic 2,000-mask RISE bank as
+the trained methods. Because the model and RISE bank are frozen, this is one
+deterministic evaluation per variant rather than five duplicate seed runs.
+
+Submit the four resumable jobs with:
+
+```bash
+bash ImageNet9_Runs/submit_imagenet9_clip_rn50_zeroshot_rise.sh
+```
+
+Summarize them with:
+
+```bash
+python ImageNet9_Runs/summarize_imagenet9_clip_rn50_zeroshot_rise.py \
+  --run-root /home/ryreu/guided_cnn/logsImageNet9/pointing_game_rise_clip_rn50_zeroshot
+```
+
+The runner is anchored to the existing zero-shot classification contract under
+`logsImageNet9/clip_rn50_zeroshot_openai/` and records that no validation or
+tuning data were used.
+
 ## Systematic R4RR teacher corruption
 
 The ImageNet-9 training split is exactly class-balanced at 5,045 examples per

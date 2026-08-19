@@ -25,12 +25,13 @@ from gals_rise_utils import load_or_create_mask_bank, rise_from_probabilities_ba
 from imagenet9_data import CLASS_NAMES, build_eval_transform
 from imagenet9_final_utils import atomic_json
 from imagenet9_pointing_game_utils import (
-    METHODS,
+    POINTING_METHODS,
     PRIMARY_VARIANTS,
     index_foreground_masks,
     parse_progress_jsonl,
     read_manifest,
     resolve_foreground_mask,
+    validate_source_contract,
     write_csv,
 )
 from train_imagenet9_baseline import _forward
@@ -182,11 +183,61 @@ class ClipLinearProbabilityModel(nn.Module):
         return torch.softmax(logits, dim=1)
 
 
+class ClipZeroShotProbabilityModel(nn.Module):
+    def __init__(self, model: nn.Module, text_classifier: torch.Tensor) -> None:
+        super().__init__()
+        self.model = model
+        self.register_buffer(
+            "text_classifier",
+            text_classifier.detach().to(dtype=torch.float32),
+            persistent=False,
+        )
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        features = self.model.encode_image(images).float()
+        features = features / features.norm(dim=1, keepdim=True).clamp_min(1e-12)
+        scale = self.model.logit_scale.exp().float().clamp(max=100.0)
+        logits = scale * features @ self.text_classifier.t()
+        return torch.softmax(logits, dim=1)
+
+
 def load_probability_model(
     method: str,
     evaluation: Mapping[str, object],
     device: torch.device,
+    download_root: Optional[Path] = None,
 ) -> Tuple[nn.Module, object, int, Dict[str, str]]:
+    if method == "clip_zs_rn50":
+        from evaluate_imagenet9_clip_vit_zeroshot import (
+            _build_text_classifier,
+            _create_openclip_model,
+            _load_open_clip,
+        )
+
+        open_clip = _load_open_clip()
+        model, preprocess, tokenizer = _create_openclip_model(
+            open_clip,
+            "RN50",
+            str(device),
+            download_root,
+        )
+        text_classifier = _build_text_classifier(
+            model,
+            tokenizer,
+            CLASS_NAMES,
+            str(device),
+        )
+        model.eval()
+        details = {
+            "checkpoint": "",
+            "afr_classifier_checkpoint": "",
+            "zero_shot_model": "RN50",
+            "zero_shot_weights": "openai",
+            "zero_shot_implementation": "open_clip",
+        }
+        wrapped = ClipZeroShotProbabilityModel(model, text_classifier).to(device)
+        return wrapped, preprocess, 224, details
+
     checkpoint = Path(str(evaluation["checkpoint"])).expanduser().resolve()
     if not checkpoint.is_file():
         raise FileNotFoundError(checkpoint)
@@ -241,7 +292,9 @@ def build_summary(
     per_class_acc = []
     summary: Dict[str, object] = {
         "dataset": "imagenet9",
-        "transfer_source": "waterbirds95",
+        "transfer_source": (
+            "none_frozen_zero_shot" if args.method == "clip_zs_rn50" else "waterbirds95"
+        ),
         "method": args.method,
         "seed": args.seed,
         "variant": args.variant,
@@ -293,7 +346,7 @@ def build_summary(
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--method", choices=METHODS, required=True)
+    parser.add_argument("--method", choices=POINTING_METHODS, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--variant", choices=PRIMARY_VARIANTS, required=True)
     parser.add_argument("--evaluation-json", type=Path, required=True)
@@ -312,6 +365,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--rise-p1", type=float, default=0.1)
     parser.add_argument("--rise-seed", type=int, default=0)
     parser.add_argument("--rise-masks-path", type=Path, required=True)
+    parser.add_argument("--download-root", type=Path)
     parser.add_argument("--device", default="cuda:0")
     return parser.parse_args(argv)
 
@@ -326,16 +380,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not path.is_dir():
             raise FileNotFoundError(path)
     evaluation = json.loads(args.evaluation_json.read_text())
-    if int(evaluation.get("seed", -1)) != args.seed:
-        raise RuntimeError("Evaluation JSON seed does not match requested seed")
-    if evaluation.get("official_variants_used_for_selection") is not False:
-        raise RuntimeError("Source evaluation does not certify held-out official variants")
+    validate_source_contract(args.method, evaluation, args.seed)
 
     device = torch.device(args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is unavailable")
     probability_model, image_transform, resize_size, details = load_probability_model(
-        args.method, evaluation, device
+        args.method, evaluation, device, args.download_root
     )
     probability_model.eval()
     masks_np, mask_hash = load_or_create_mask_bank(
@@ -431,7 +482,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 mass_inside = float(positive[foreground].sum() / total_mass) if total_mass > 0 else 0.0
                 row = {
                     "dataset": "imagenet9",
-                    "transfer_source": "waterbirds95",
+                    "transfer_source": (
+                        "none_frozen_zero_shot"
+                        if args.method == "clip_zs_rn50"
+                        else "waterbirds95"
+                    ),
                     "method": args.method,
                     "seed": args.seed,
                     "variant": args.variant,

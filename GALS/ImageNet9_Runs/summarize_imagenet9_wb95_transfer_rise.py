@@ -59,7 +59,7 @@ def summarize_method_variant(
             raise RuntimeError(f"Seed mismatch for {method}/{variant}/seed_{seed}")
     summary: Dict[str, object] = {
         "dataset": "imagenet9",
-        "transfer_source": "waterbirds95",
+        "transfer_source": rows[0].get("transfer_source", "waterbirds95"),
         "method": method,
         "variant": variant,
         "explainer": "rise",
