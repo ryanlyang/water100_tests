@@ -586,3 +586,32 @@ overall, macro-class, and worst-class Pointing Game accuracy, the foreground
 area random baseline, classification accuracy, and saliency mass inside the
 foreground. Standard deviations are population standard deviations over the
 five training seeds.
+
+## Systematic R4RR teacher corruption
+
+The ImageNet-9 training split is exactly class-balanced at 5,045 examples per
+class. This study therefore compares nine class-conditional teacher failures
+against one shared, exactly count-matched random control. Every condition
+inverts 5,045 of the 45,405 training maps using `1-M` followed by sum
+normalization. The selected maps are persisted in a checksummed manifest and
+shared across training seeds 0--4; validation and official test data remain
+unchanged.
+
+The study locks the validation-selected ImageNet-9 forward-KL R4RR parameters,
+uses `kl_increment=0`, and performs no corruption-specific retuning. Each of
+the ten Slurm jobs runs five seeds sequentially and resumes at the seed
+boundary. Preview or submit all conditions with:
+
+```bash
+cd /home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS
+DRY_RUN=1 bash ImageNet9_Runs/submit_imagenet9_r4rr_systematic_corruption_all.sh
+bash ImageNet9_Runs/submit_imagenet9_r4rr_systematic_corruption_all.sh
+```
+
+After all jobs finish, aggregate five-seed means, population standard
+deviations, and seed-paired class-minus-random differences with:
+
+```bash
+python ImageNet9_Runs/summarize_imagenet9_r4rr_systematic_corruption.py \
+  --run-root /home/ryreu/guided_cnn/logsImageNet9/r4rr_systematic_teacher_corruption/imagenet9
+```

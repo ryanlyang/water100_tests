@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import random
 import sys
@@ -84,6 +85,10 @@ class R4RRTrainResult:
     classifier_lr: float
     lr2_mult: float
     alignment_loss: str
+    corruption_indices: str
+    corruption_indices_sha256: str
+    corrupted_examples_per_epoch: int
+    corrupted_examples_seen: int
     invalid_teacher_samples_seen: int
     aligned_teacher_samples_seen: int
 
@@ -145,13 +150,56 @@ def joint_train_transform(
     return image_tensor, mask_tensor
 
 
+def invert_and_renormalize_mask(mask: torch.Tensor) -> torch.Tensor:
+    """Invert one transformed teacher mask using the shared corruption protocol."""
+    inverted = torch.clamp(1.0 - mask, min=0.0)
+    total = inverted.sum()
+    if float(total.item()) <= 1e-12:
+        return torch.full_like(inverted, 1.0 / float(inverted.numel()))
+    return inverted / total
+
+
+def load_corruption_indices(path: Optional[Path], dataset_size: int) -> Tuple[int, ...]:
+    if path is None:
+        return ()
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    values = np.asarray(np.load(path, allow_pickle=False), dtype=np.int64).reshape(-1)
+    if values.size == 0:
+        raise RuntimeError(f"Corruption index file is empty: {path}")
+    if np.unique(values).size != values.size:
+        raise RuntimeError(f"Corruption index file contains duplicates: {path}")
+    if int(values.min()) < 0 or int(values.max()) >= dataset_size:
+        raise RuntimeError(
+            f"Corruption indices are outside [0, {dataset_size - 1}]: {path}"
+        )
+    return tuple(sorted(int(value) for value in values.tolist()))
+
+
+def sha256_file(path: Optional[Path]) -> str:
+    if path is None:
+        return ""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 class ImageNet9R4RRDataset(Dataset):
     """Original training images paired with target-class WeCLIP+ masks."""
 
-    def __init__(self, samples: Sequence[object], teacher_map_root: Path, image_size: int) -> None:
+    def __init__(
+        self,
+        samples: Sequence[object],
+        teacher_map_root: Path,
+        image_size: int,
+        corrupted_indices: Sequence[int] = (),
+    ) -> None:
         self.samples = list(samples)
         self.teacher_map_root = teacher_map_root
         self.image_size = image_size
+        self.corrupted_indices = frozenset(int(index) for index in corrupted_indices)
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -178,10 +226,14 @@ class ImageNet9R4RRDataset(Dataset):
         image_tensor, mask_tensor = joint_train_transform(
             image, target_mask, self.image_size
         )
+        is_corrupted = index in self.corrupted_indices
+        if is_corrupted:
+            mask_tensor = invert_and_renormalize_mask(mask_tensor)
         return {
             "image": image_tensor,
             "label": torch.tensor(sample.label, dtype=torch.long),
             "teacher_mask": mask_tensor,
+            "teacher_corrupted": torch.tensor(is_corrupted, dtype=torch.bool),
             "sample_id": sample.sample_id,
         }
 
@@ -251,6 +303,9 @@ def build_loaders(args: argparse.Namespace):
 
     generator = torch.Generator()
     generator.manual_seed(args.seed)
+    corrupted_indices = load_corruption_indices(
+        args.corruption_indices, len(train_samples)
+    )
     common = {
         "batch_size": args.batch_size,
         "num_workers": args.num_workers,
@@ -259,7 +314,12 @@ def build_loaders(args: argparse.Namespace):
         "drop_last": False,
     }
     train_loader = DataLoader(
-        ImageNet9R4RRDataset(train_samples, args.teacher_map_root, args.image_size),
+        ImageNet9R4RRDataset(
+            train_samples,
+            args.teacher_map_root,
+            args.image_size,
+            corrupted_indices=corrupted_indices,
+        ),
         shuffle=True,
         generator=generator,
         **common,
@@ -316,6 +376,12 @@ def _save_checkpoint(
                 "epochs": args.epochs,
                 "seed": args.seed,
                 "teacher_map_root": str(args.teacher_map_root),
+                "corruption_indices": (
+                    str(args.corruption_indices.resolve())
+                    if args.corruption_indices is not None
+                    else ""
+                ),
+                "corruption_indices_sha256": sha256_file(args.corruption_indices),
             },
             "result": asdict(result),
         },
@@ -342,6 +408,7 @@ def train(args: argparse.Namespace) -> R4RRTrainResult:
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is not available")
     train_loader, val_loader, train_samples, val_samples = build_loaders(args)
+    corrupted_per_epoch = len(train_loader.dataset.corrupted_indices)
 
     model = _torchvision_resnet50(args.pretrained)
     model.fc = nn.Linear(model.fc.in_features, NUM_CLASSES)
@@ -356,6 +423,7 @@ def train(args: argparse.Namespace) -> R4RRTrainResult:
     best_state: Optional[Dict[str, torch.Tensor]] = None
     invalid_seen = 0
     aligned_seen = 0
+    corrupted_seen = 0
     start = time.time()
 
     print(
@@ -368,6 +436,12 @@ def train(args: argparse.Namespace) -> R4RRTrainResult:
         f"kl_increment={args.kl_increment:.9g} lr2_mult={args.lr2_mult:.9g} "
         f"alignment_loss={args.alignment_loss} "
         f"teacher_map_root={args.teacher_map_root}",
+        flush=True,
+    )
+    print(
+        f"[CORRUPTION] indices={args.corruption_indices or 'NONE'} "
+        f"examples_per_epoch={corrupted_per_epoch} "
+        "operation=one_minus_then_sum_renormalize",
         flush=True,
     )
     print(
@@ -406,10 +480,12 @@ def train(args: argparse.Namespace) -> R4RRTrainResult:
         train_count = 0
         epoch_invalid = 0
         epoch_aligned = 0
+        epoch_corrupted = 0
         for batch in train_loader:
             images = batch["image"].to(device, non_blocking=True)
             targets = batch["label"].to(device, non_blocking=True)
             teacher_masks = batch["teacher_mask"].to(device, non_blocking=True)
+            epoch_corrupted += int(batch["teacher_corrupted"].sum().item())
             optimizer.zero_grad(set_to_none=True)
             logits, cams = forward_resnet_cam(model, images, targets)
             ce_loss = criterion(logits, targets)
@@ -431,6 +507,12 @@ def train(args: argparse.Namespace) -> R4RRTrainResult:
 
         invalid_seen += epoch_invalid
         aligned_seen += epoch_aligned
+        corrupted_seen += epoch_corrupted
+        if epoch_corrupted != corrupted_per_epoch:
+            raise RuntimeError(
+                f"Corruption coverage mismatch at epoch {epoch + 1}: "
+                f"observed={epoch_corrupted} expected={corrupted_per_epoch}"
+            )
         model.eval()
         val_loss_sum = 0.0
         val_count = 0
@@ -489,6 +571,14 @@ def train(args: argparse.Namespace) -> R4RRTrainResult:
         classifier_lr=args.classifier_lr,
         lr2_mult=args.lr2_mult,
         alignment_loss=args.alignment_loss,
+        corruption_indices=(
+            str(args.corruption_indices.resolve())
+            if args.corruption_indices is not None
+            else ""
+        ),
+        corruption_indices_sha256=sha256_file(args.corruption_indices),
+        corrupted_examples_per_epoch=corrupted_per_epoch,
+        corrupted_examples_seen=corrupted_seen,
         invalid_teacher_samples_seen=invalid_seen,
         aligned_teacher_samples_seen=aligned_seen,
     )
@@ -513,6 +603,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--method", choices=("r4rr",), default="r4rr")
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--teacher-map-root", type=Path, required=True)
+    parser.add_argument(
+        "--corruption-indices",
+        type=Path,
+        help="Optional .npy training-index manifest for lazy teacher-map inversion.",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=96)

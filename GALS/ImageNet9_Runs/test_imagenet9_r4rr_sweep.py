@@ -18,7 +18,9 @@ from audit_imagenet9_r4rr_weclip_maps import voc_colormap
 from train_imagenet9_r4rr import (
     ALIGNMENT_LOSSES,
     decode_target_mask,
+    invert_and_renormalize_mask,
     joint_train_transform,
+    load_corruption_indices,
     r4rr_alignment_loss,
 )
 
@@ -95,6 +97,22 @@ class ImageNet9R4RRSweepTests(unittest.TestCase):
         self.assertTrue(torch.allclose(loss, expected))
         loss.backward()
         self.assertEqual(float(cams.grad[1].abs().sum()), 0.0)
+
+    def test_teacher_inversion_is_one_minus_then_sum_normalized(self):
+        mask = torch.tensor([[0.0, 1.0], [0.25, 0.75]])
+        observed = invert_and_renormalize_mask(mask)
+        expected = torch.tensor([[1.0, 0.0], [0.75, 0.25]]) / 2.0
+        self.assertTrue(torch.allclose(observed, expected))
+        self.assertAlmostEqual(float(observed.sum()), 1.0)
+
+    def test_corruption_index_file_is_sorted_and_validated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "indices.npy"
+            np.save(path, np.array([4, 1, 3], dtype=np.int64))
+            self.assertEqual(load_corruption_indices(path, 5), (1, 3, 4))
+            np.save(path, np.array([1, 1], dtype=np.int64))
+            with self.assertRaises(RuntimeError):
+                load_corruption_indices(path, 5)
 
     def test_all_empty_batch_returns_differentiable_zero(self):
         cams = torch.randn(2, 3, 3, requires_grad=True)
