@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import csv
 import sys
 import tempfile
@@ -23,6 +24,9 @@ from imagenet9_systematic_corruption import (  # noqa: E402
     build_manifest,
     prepare_manifest,
     select_indices,
+)
+from run_imagenet9_r4rr_systematic_corruption import (  # noqa: E402
+    build_selection_args,
 )
 
 
@@ -46,6 +50,20 @@ def rows():
 
 
 class SelectionTests(unittest.TestCase):
+    def test_final_selection_adapter_includes_training_shape(self) -> None:
+        source = argparse.Namespace(
+            sweep_summary=Path("summary.json"),
+            teacher_map_root=Path("teacher_maps"),
+            kl_increment=0.0,
+            epochs=20,
+            batch_size=96,
+        )
+        adapted = build_selection_args(source)
+        self.assertEqual(adapted.alignment_loss, "forward_kl")
+        self.assertIsNone(adapted.trial_number)
+        self.assertEqual(adapted.epochs, 20)
+        self.assertEqual(adapted.batch_size, 96)
+
     def test_each_systematic_selection_is_class_pure(self) -> None:
         values = labels()
         for label, class_name in enumerate(CLASS_NAMES):

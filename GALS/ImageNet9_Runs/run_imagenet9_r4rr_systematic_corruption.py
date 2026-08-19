@@ -55,6 +55,19 @@ def read_metric_summary(path: Path) -> Dict[str, Dict[str, object]]:
         }
 
 
+def build_selection_args(args: argparse.Namespace) -> argparse.Namespace:
+    """Adapt corruption-run arguments to the final R4RR selection contract."""
+    return argparse.Namespace(
+        sweep_summary=args.sweep_summary,
+        alignment_loss="forward_kl",
+        teacher_map_root=args.teacher_map_root,
+        trial_number=None,
+        kl_increment=args.kl_increment,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+    )
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     if args.kl_increment != 0.0:
@@ -70,14 +83,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         args.corruption_seed,
     )
     indices_sha256 = sha256_file(indices_path)
-    selection_args = argparse.Namespace(
-        sweep_summary=args.sweep_summary,
-        alignment_loss="forward_kl",
-        teacher_map_root=args.teacher_map_root,
-        trial_number=None,
-        kl_increment=args.kl_increment,
-    )
-    selection = load_selection(selection_args)
+    selection = load_selection(build_selection_args(args))
     result_method = f"r4rr_systematic_{args.condition}_klincr0"
     selection.update(
         {
