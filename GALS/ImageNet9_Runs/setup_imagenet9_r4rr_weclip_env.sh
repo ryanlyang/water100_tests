@@ -32,9 +32,17 @@ python -m pip install --upgrade \
   'setuptools<70' \
   wheel
 
-# Install DenseCRF before the pip-pinned stack. Its pip source build is
-# unreliable on SPORC, and installing it last could let Conda replace NumPy.
-conda install -y -c conda-forge pydensecrf
+# Install DenseCRF before the pip-pinned stack. Keep Python explicit because
+# Conda may otherwise upgrade the environment to the newest Python build that
+# satisfies pydensecrf, which is incompatible with the pinned PyTorch wheels.
+conda install -y -c conda-forge python=3.8 pydensecrf
+
+python - <<'PY'
+import sys
+
+assert sys.version_info[:2] == (3, 8), sys.version
+print(f"[PYTHON CHECK] python={sys.version.split()[0]}")
+PY
 
 # DINOv2 uses torch.nn.functional.scaled_dot_product_attention, which requires
 # PyTorch 2.x. CUDA 11.7 wheels run on the SPORC A100 nodes without changing
