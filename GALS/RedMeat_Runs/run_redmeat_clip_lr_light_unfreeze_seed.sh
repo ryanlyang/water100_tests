@@ -21,7 +21,22 @@ case "$SEED" in
 esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GALS_ROOT="${GALS_ROOT:-$(dirname "$SCRIPT_DIR")}"
+CLUSTER_GALS_ROOT="/home/ryreu/guided_cnn/waterbirds/Waterbird_Runs/GALS"
+if [[ -n "${GALS_ROOT:-}" ]]; then
+  :
+elif [[ -n "${SLURM_SUBMIT_DIR:-}" && -f "$SLURM_SUBMIT_DIR/RedMeat_Runs/run_clip_lr_light_unfreeze_study.py" ]]; then
+  GALS_ROOT="$SLURM_SUBMIT_DIR"
+elif [[ -f "$SCRIPT_DIR/run_clip_lr_light_unfreeze_study.py" ]]; then
+  GALS_ROOT="$(dirname "$SCRIPT_DIR")"
+elif [[ -f "$CLUSTER_GALS_ROOT/RedMeat_Runs/run_clip_lr_light_unfreeze_study.py" ]]; then
+  GALS_ROOT="$CLUSTER_GALS_ROOT"
+else
+  echo "[ERROR] Could not locate the GALS repository root." >&2
+  echo "[ERROR] Set GALS_ROOT explicitly and resubmit." >&2
+  exit 2
+fi
+PYTHON_ENTRY="$GALS_ROOT/RedMeat_Runs/run_clip_lr_light_unfreeze_study.py"
+[[ -f "$PYTHON_ENTRY" ]] || { echo "[ERROR] Missing Python entry point: $PYTHON_ENTRY" >&2; exit 2; }
 DATA_ROOT="${DATA_ROOT:-/home/ryreu/guided_cnn/Food101/data/food-101-redmeat}"
 LOG_DIR="${LOG_DIR:-/home/ryreu/guided_cnn/logsRedMeat}"
 RUN_ROOT="${RUN_ROOT:-$LOG_DIR/clip_lr_rn50_full_visual_finetune}"
@@ -56,12 +71,13 @@ export NUMEXPR_NUM_THREADS=1
 
 cd "$GALS_ROOT"
 echo "[$(date)] host=$(hostname) job=${SLURM_JOB_ID:-local} seed=$SEED"
+echo "[RUN] repo=$GALS_ROOT"
 echo "[RUN] data=$DATA_ROOT output=$OUTPUT_DIR"
 echo "[RUN] epochs=$EVAL_EPOCHS scope=$UNFREEZE_SCOPE encoder_lr=$ENCODER_LR head_lr=$HEAD_LR"
 echo "[RUN] fixed_C=$BASELINE_C retuned_C=Optuna[$C_MIN,$C_MAX] trials=$C_TRIALS"
 which python
 
-python -u RedMeat_Runs/run_clip_lr_light_unfreeze_study.py \
+python -u "$PYTHON_ENTRY" \
   --data-root "$DATA_ROOT" \
   --output-dir "$OUTPUT_DIR" \
   --seed "$SEED" \
