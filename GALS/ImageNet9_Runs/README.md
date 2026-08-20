@@ -634,6 +634,26 @@ DRY_RUN=1 bash ImageNet9_Runs/submit_imagenet9_r4rr_systematic_corruption_all.sh
 bash ImageNet9_Runs/submit_imagenet9_r4rr_systematic_corruption_all.sh
 ```
 
+To run the identical corruption selections with the Waterbirds-95 transfer
+configuration instead, use the separate transfer submitter. This protocol
+locks the exposure-matched 21-epoch schedule, attention epoch 12,
+`kl_lambda=295.30`, `base_lr=4.82e-5`, `classifier_lr=2.93e-3`,
+`lr2_mult=0.409`, and `kl_increment=0`; no ImageNet-9 validation result selects
+these hyperparameters. It reuses the original study's checksummed corruption
+manifests and writes to an isolated output root.
+
+```bash
+DRY_RUN=1 bash ImageNet9_Runs/submit_imagenet9_r4rr_wb95_systematic_corruption_all.sh
+bash ImageNet9_Runs/submit_imagenet9_r4rr_wb95_systematic_corruption_all.sh
+```
+
+Aggregate the transfer corruption results with:
+
+```bash
+python ImageNet9_Runs/summarize_imagenet9_r4rr_systematic_corruption.py \
+  --run-root /home/ryreu/guided_cnn/logsImageNet9/r4rr_systematic_teacher_corruption/imagenet9_wb95_transfer
+```
+
 After all jobs finish, aggregate five-seed means, population standard
 deviations, and seed-paired class-minus-random differences with:
 

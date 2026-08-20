@@ -8,7 +8,7 @@ import csv
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from imagenet9_final_utils import atomic_json, parse_seeds, write_method_tables
 from imagenet9_systematic_corruption import (
@@ -26,7 +26,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--condition", choices=CONDITIONS, required=True)
     parser.add_argument("--corruption-seed", type=int, default=0)
     parser.add_argument("--corruption-manifest-root", type=Path, required=True)
-    parser.add_argument("--sweep-summary", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--sweep-summary", type=Path)
+    source.add_argument("--transfer-config", type=Path)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--teacher-map-root", type=Path, required=True)
     parser.add_argument("--official-manifest", type=Path, required=True)
@@ -68,6 +70,76 @@ def build_selection_args(args: argparse.Namespace) -> argparse.Namespace:
     )
 
 
+def load_hyperparameter_selection(
+    args: argparse.Namespace,
+) -> Tuple[Dict[str, object], Dict[str, object], str]:
+    transfer_config = getattr(args, "transfer_config", None)
+    if transfer_config is None:
+        selection = load_selection(build_selection_args(args))
+        source_fields: Dict[str, object] = {
+            "source_sweep_summary_sha256": sha256_file(args.sweep_summary),
+        }
+        return selection, source_fields, "imagenet9_optuna"
+
+    from run_imagenet9_wb95_transfer_5seed import load_config
+
+    config = load_config(argparse.Namespace(method="r4rr", config=transfer_config))
+    experiment = config["experiment"]
+    fixed_config = config["fixed"]
+    params = config["params"]
+    if int(args.epochs) != int(experiment["target_standard_epochs"]):
+        raise RuntimeError(
+            f"Transfer protocol requires {experiment['target_standard_epochs']} epochs, "
+            f"got {args.epochs}"
+        )
+    if int(args.batch_size) != int(experiment["target_batch_size"]):
+        raise RuntimeError(
+            f"Transfer protocol requires batch size {experiment['target_batch_size']}, "
+            f"got {args.batch_size}"
+        )
+    if params["alignment_loss"] != "forward_kl":
+        raise RuntimeError("WB95 transfer corruption requires forward KL")
+    if float(params["kl_increment"]) != float(args.kl_increment):
+        raise RuntimeError("WB95 transfer corruption requires the configured KL increment")
+
+    selection = {
+        "method": "r4rr",
+        "result_method": "r4rr_wb95_transfer_systematic_klincr0",
+        "alignment_loss": "forward_kl",
+        "selection_mode": "waterbirds95_validation_transfer",
+        "source_config": str(transfer_config.resolve()),
+        "selected_trial": None,
+        "selected_value": None,
+        "best_params": {
+            key: params[key]
+            for key in (
+                "attention_epoch",
+                "kl_lambda",
+                "base_lr",
+                "classifier_lr",
+                "lr2_mult",
+            )
+        },
+        "teacher_map_root": str(args.teacher_map_root.resolve()),
+        "fixed": {
+            "epochs": int(args.epochs),
+            "batch_size": int(args.batch_size),
+            "weight_decay": fixed_config["weight_decay"],
+            "momentum": fixed_config["momentum"],
+            "nesterov": fixed_config["nesterov"],
+            "pretrained": fixed_config["pretrained"],
+            "kl_increment": float(params["kl_increment"]),
+        },
+        "hyperparameter_selection": "waterbirds95_validation_transfer",
+        "imagenet9_validation_use": "checkpoint_selection_only",
+        "official_variants_used_for_selection": False,
+    }
+    source_fields = {
+        "source_transfer_config_sha256": sha256_file(transfer_config),
+    }
+    return selection, source_fields, "waterbirds95_transfer"
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     if args.kl_increment != 0.0:
@@ -83,8 +155,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         args.corruption_seed,
     )
     indices_sha256 = sha256_file(indices_path)
-    selection = load_selection(build_selection_args(args))
-    result_method = f"r4rr_systematic_{args.condition}_klincr0"
+    selection, source_fields, hyperparameter_protocol = load_hyperparameter_selection(args)
+    if hyperparameter_protocol == "imagenet9_optuna":
+        result_method = f"r4rr_systematic_{args.condition}_klincr0"
+    else:
+        result_method = f"r4rr_wb95_transfer_systematic_{args.condition}_klincr0"
     selection.update(
         {
             "result_method": result_method,
@@ -95,13 +170,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "corruption_manifest_sha256": manifest_sha256,
             "corruption_indices": str(indices_path.resolve()),
             "corruption_indices_sha256": indices_sha256,
-            "source_sweep_summary_sha256": sha256_file(args.sweep_summary),
+            **source_fields,
             "seeds": list(seeds),
             "epochs": args.epochs,
             "batch_size": args.batch_size,
             "official_variants_used_for_selection": False,
         }
     )
+    if hyperparameter_protocol == "waterbirds95_transfer":
+        selection["hyperparameter_protocol"] = hyperparameter_protocol
     args.run_root.mkdir(parents=True, exist_ok=True)
     ensure_contract(args.run_root / "run_contract.json", selection)
     params = selection["best_params"]
@@ -206,7 +283,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     write_method_tables(result_method, args.run_root, evaluations)
     metrics = read_metric_summary(args.run_root / "summary.csv")
-    corruption_summary = {
+    corruption_summary: Dict[str, object] = {
         "protocol_version": manifest["protocol_version"],
         "dataset": "imagenet9",
         "study": "systematic_teacher_corruption",
@@ -220,7 +297,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "corruption_operation": manifest["corruption_operation"],
         "corruption_manifest_sha256": manifest_sha256,
         "corruption_indices_sha256": indices_sha256,
-        "source_sweep_summary": str(args.sweep_summary.resolve()),
         "selected_trial": selection["selected_trial"],
         "selected_value": selection["selected_value"],
         "best_params": params,
@@ -231,6 +307,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "metrics": metrics,
         "official_variants_used_for_selection": False,
     }
+    if hyperparameter_protocol == "imagenet9_optuna":
+        corruption_summary["source_sweep_summary"] = str(args.sweep_summary.resolve())
+    else:
+        corruption_summary.update(
+            {
+                "hyperparameter_protocol": "waterbirds95_transfer",
+                "hyperparameter_selection": "waterbirds95_validation_transfer",
+                "source_transfer_config": str(args.transfer_config.resolve()),
+                "source_transfer_config_sha256": sha256_file(args.transfer_config),
+                "imagenet9_validation_use": "checkpoint_selection_only",
+            }
+        )
     atomic_json(args.run_root / "corruption_summary.json", corruption_summary)
     print(f"[DONE] {args.run_root / 'corruption_summary.json'}", flush=True)
     return 0

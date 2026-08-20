@@ -27,6 +27,7 @@ from imagenet9_systematic_corruption import (  # noqa: E402
 )
 from run_imagenet9_r4rr_systematic_corruption import (  # noqa: E402
     build_selection_args,
+    load_hyperparameter_selection,
 )
 
 
@@ -63,6 +64,39 @@ class SelectionTests(unittest.TestCase):
         self.assertIsNone(adapted.trial_number)
         self.assertEqual(adapted.epochs, 20)
         self.assertEqual(adapted.batch_size, 96)
+
+    def test_wb95_transfer_selection_is_locked(self) -> None:
+        config = THIS_DIR / "configs" / "waterbirds95_hparam_transfer.yaml"
+        source = argparse.Namespace(
+            sweep_summary=None,
+            transfer_config=config,
+            teacher_map_root=Path("teacher_maps"),
+            kl_increment=0.0,
+            epochs=21,
+            batch_size=96,
+        )
+        selection, provenance, protocol = load_hyperparameter_selection(source)
+        self.assertEqual(protocol, "waterbirds95_transfer")
+        self.assertEqual(selection["selection_mode"], "waterbirds95_validation_transfer")
+        self.assertEqual(selection["best_params"]["attention_epoch"], 12)
+        self.assertAlmostEqual(selection["best_params"]["kl_lambda"], 295.30)
+        self.assertAlmostEqual(selection["best_params"]["base_lr"], 4.82e-5)
+        self.assertAlmostEqual(selection["best_params"]["classifier_lr"], 2.93e-3)
+        self.assertAlmostEqual(selection["best_params"]["lr2_mult"], 0.409)
+        self.assertEqual(selection["fixed"]["epochs"], 21)
+        self.assertIn("source_transfer_config_sha256", provenance)
+
+    def test_wb95_transfer_selection_rejects_wrong_epoch_count(self) -> None:
+        source = argparse.Namespace(
+            sweep_summary=None,
+            transfer_config=THIS_DIR / "configs" / "waterbirds95_hparam_transfer.yaml",
+            teacher_map_root=Path("teacher_maps"),
+            kl_increment=0.0,
+            epochs=20,
+            batch_size=96,
+        )
+        with self.assertRaises(RuntimeError):
+            load_hyperparameter_selection(source)
 
     def test_each_systematic_selection_is_class_pure(self) -> None:
         values = labels()
